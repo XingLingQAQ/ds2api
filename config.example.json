@@ -1,0 +1,23 @@
+{
+  "keys": [
+    "your-api-key-1",
+    "your-api-key-2"
+  ],
+  "accounts": [
+    {
+      "email": "example1@example.com",
+      "password": "your-password-1",
+      "token": ""
+    },
+    {
+      "email": "example2@example.com",
+      "password": "your-password-2",
+      "token": ""
+    },
+    {
+      "mobile": "12345678901",
+      "password": "your-password-3",
+      "token": ""
+    }
+  ]
+}

@@ -13,10 +13,7 @@
 * [免责声明](#免责声明)
 * [接入准备](#接入准备)
   * [多账号接入](#多账号接入)
-* [Docker部署](#Docker部署)
-* [Docker-compose部署](#Docker-compose部署)
 * [Vercel部署](#Vercel部署)
-* [原生部署](#原生部署)
 * [接口列表](#接口列表)
   * [模型列表](#模型列表)
   * [对话补全](#对话补全)
@@ -48,18 +45,28 @@
 
 每次请求服务会从中挑选一个。
 
-## Docker部署
+## Vercel部署
 
-请准备一台具有公网IP的服务器并将5001端口开放。
+> [!NOTE]
+> Vercel免费账户的请求响应超时时间为10秒，但接口响应通常较久，可能会遇到Vercel返回的504超时错误！
 
-配置 config.json
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/iidamie/deepseek2api)
 
-在 `deepseek` 目录下，创建 config.json文件
+### 部署步骤
+
+1. **点击上方按钮一键部署到 Vercel**
+
+2. **配置方式选择（二选一）**
+
+#### 方式 A：使用配置文件（推荐用于开发测试）
+
+部署完成后，返回你的 Github 仓库，创建/编辑 `config.json` 文件（可参考 `config.example.json`）：
+
 ```json
 {
   "keys": [
-    "key1",
-    "key2"
+    "your-api-key-1",
+    "your-api-key-2"
   ],
   "accounts": [
     {
@@ -76,126 +83,48 @@
       "mobile": "12345678901",
       "password": "password3",
       "token": ""
-    },
-    {
-      "mobile": "12345678901",
-      "password": "password4",
-      "token": ""
     }
   ]
 }
 ```
- * keys - 你的 API 鉴权密钥
- * accounts - DeepSeek 账号列表，支持多个账号轮换，避免单账号受限
 
-拉取镜像并启动服务。
-
-```shell
-docker run -d -p 5001:5001 -v "$(pwd)/config.json:/app/config.json" --name deepseek2api ghcr.io/iidamie/deepseek2api:latest
-```
-
-查看服务实时日志
-
-```shell
-docker logs -f deepseek2api
-```
-
-重启服务
-
-```shell
-docker restart deepseek2api
-```
-
-停止服务
-
-```shell
-docker stop deepseek2api
-```
-
-## Docker-compose部署
-
-拉取该项目
-```shell
-git clone https://github.com/iidamie/deepseek2api.git
-cd deepseek2api
-```
-配置 config.json
-
-在当前目录下，修改 config.json 文件
- * keys - 你的 API 鉴权密钥
- * accounts - DeepSeek 账号列表，支持多个账号轮换，避免单账号受限
-
-启动服务
-
-```shell
-docker-compose up -d
-```
-
-查看服务实时日志
-
-```shell
-docker logs -f deepseek2api
-```
-
-重启服务
-
-```shell
-docker restart deepseek2api
-```
-
-停止服务
-
-```shell
-docker stop deepseek2api
-```
-
-## Vercel部署
-
-> [!NOTE]
-> Vercel免费账户的请求响应超时时间为10秒，但接口响应通常较久，可能会遇到Vercel返回的504超时错误！
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/iidamie/deepseek2api)
-
-部署完后，返回你的 Github 仓库配置 config.json
- * keys - 你的 API 鉴权密钥
- * accounts - DeepSeek 账号列表，支持多个账号轮换，避免单账号受限
+配置完成后，返回 Vercel 控制台，点击 "Redeploy" 重新部署即可。
 
 > [!WARNING]  
 > 一定要是私库，防止信息泄露！
 
-配置完后，返回 Vercel 控制台，重新部署即可
+#### 方式 B：使用环境变量（推荐用于生产环境）
 
-## 原生部署
+在 Vercel 控制台的 Settings → Environment Variables 中添加以下环境变量：
 
-请准备一台具有公网IP的服务器并将5001端口开放。
+- **环境变量名**：`DS2API_CONFIG_JSON` 或 `CONFIG_JSON`
+- **环境变量值**：配置内容的 JSON 字符串（可选：使用 base64 编码）
 
-请先安装好 Python 环境并且配置好环境变量，确认 python 命令可用。
-
-安装依赖
-
-```shell
-git clone https://github.com/iidamie/deepseek2api.git
-cd deepseek2api
-pip install -r requirements.txt
+**JSON 字符串示例**：
+```json
+{"keys":["your-api-key-1"],"accounts":[{"email":"example@example.com","password":"your-password","token":""}]}
 ```
 
-配置 config.json
-
-在当前目录下，修改 config.json 文件
- * keys - 你的 API 鉴权密钥
- * accounts - DeepSeek 账号列表，支持多个账号轮换，避免单账号受限
-
-启动服务
-
-```shell
-python app.py
+**Base64 编码示例**（Linux/Mac）：
+```bash
+echo '{"keys":["your-api-key-1"],"accounts":[{"email":"example@example.com","password":"your-password","token":""}]}' | base64
 ```
 
-使用 nohup 启动
+添加环境变量后，在 Vercel 控制台重新部署即可。
 
-```shell
-nohup uvicorn app:app --host 0.0.0.0 --port 5001 > uvicorn.log 2>&1 &
-```
+### 配置说明
+
+* `keys` - 你的 API 鉴权密钥（可设置多个）
+* `accounts` - DeepSeek 账号列表，支持多个账号轮换，避免单账号受限
+* 支持使用 `email` 或 `mobile` 登录
+* `token` 字段可以留空，系统会在首次使用时自动登录并填充（注意：Vercel 环境下 token 无法回写）
+
+### 注意事项
+
+- 推荐使用**环境变量**方式配置，更加安全
+- 如使用配置文件方式，确保你的 GitHub 仓库是**私有仓库**
+- Vercel 免费版有请求时长限制（10秒），如遇 504 错误属正常现象
+- Vercel 环境下文件系统是只读的，token 自动更新功能可能受限
 
 ## 接口列表
 
