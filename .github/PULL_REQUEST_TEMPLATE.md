@@ -18,3 +18,7 @@
 #### 📝 补充信息 | Additional Information
 
 <!-- Add any other context about the Pull Request here. -->
+
+---
+
+> 💡 **提示**：如果修改了 `webui/` 目录下的文件，PR 合并后 CI 会自动构建并提交产物，无需手动构建。

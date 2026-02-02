@@ -125,6 +125,27 @@ npm run dev
 
 WebUI 开发服务器会启动在 `http://localhost:5173`，并自动代理 API 请求到后端 `http://localhost:5001`。
 
+### WebUI 构建
+
+WebUI 构建产物位于 `static/admin/` 目录。
+
+**自动构建（推荐）**：
+- 当 `webui/` 目录下的文件变更并推送到 `main` 分支时，GitHub Actions 会自动构建并提交产物
+- PR 合并时会自动触发构建
+
+**手动构建**：
+```bash
+# 方式1：使用脚本
+./scripts/build-webui.sh
+
+# 方式2：直接执行
+cd webui
+npm install
+npm run build
+```
+
+> **贡献者注意**：修改 WebUI 后无需手动构建，CI 会自动处理。
+
 ---
 
 ## 生产环境部署
