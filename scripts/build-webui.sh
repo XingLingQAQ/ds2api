@@ -18,5 +18,10 @@ fi
 echo "🏗️  Running build..."
 npm run build
 
+if [ ! -f "../static/admin/index.html" ]; then
+    echo "❌ WebUI build failed: static/admin/index.html not found"
+    exit 1
+fi
+
 echo "✅ WebUI built successfully!"
 echo "📁 Output: static/admin/"
