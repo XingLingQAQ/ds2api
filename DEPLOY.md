@@ -1,5 +1,7 @@
 # DS2API 部署指南
 
+语言 / Language: [中文](DEPLOY.md) | [English](DEPLOY.en.md)
+
 本文档详细介绍 DS2API 的各种部署方式。
 
 ---
@@ -7,6 +9,7 @@
 ## 目录
 
 - [Vercel 部署（推荐）](#vercel-部署推荐)
+- [Docker 部署（推荐）](#docker-部署推荐)
 - [本地开发](#本地开发)
 - [生产环境部署](#生产环境部署)
 - [常见问题](#常见问题)
@@ -125,6 +128,131 @@ npm run dev
 
 WebUI 开发服务器会启动在 `http://localhost:5173`，并自动代理 API 请求到后端 `http://localhost:5001`。
 
+### WebUI 构建
+
+WebUI 构建产物位于 `static/admin/` 目录。
+
+**自动构建（推荐）**：
+- 当前由 Vercel 在部署时执行 WebUI 构建（见 `vercel.json` 的 `buildCommand`）
+- GitHub Actions 的 WebUI 自动构建流程已关闭
+- `static/admin/` 构建产物不再提交到仓库
+
+**手动构建**：
+```bash
+# 方式1：使用脚本
+./scripts/build-webui.sh
+
+# 方式2：直接执行
+cd webui
+npm install
+npm run build
+```
+
+> **贡献者注意**：修改 WebUI 后无需手动构建，Vercel 部署会自动构建。
+
+---
+
+## Docker 部署（推荐）
+
+Docker 部署采用**零侵入、解耦设计**：
+- Dockerfile 仅执行标准 Python 项目操作，不硬编码任何项目特定配置
+- 构建镜像时会一并构建 WebUI（便于非 Vercel 部署直接访问管理面板）
+- 所有配置通过环境变量和 `.env` 文件管理
+- **主代码更新时只需重新构建镜像，无需修改 Docker 配置**
+
+### 快速开始（Docker Compose）
+
+```bash
+# 1. 复制环境变量模板
+cp .env.example .env
+# 编辑 .env，填写 DS2API_ADMIN_KEY 和 DS2API_CONFIG_JSON
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 查看日志
+docker-compose logs -f
+
+# 4. 主代码更新后重新构建
+docker-compose up -d --build
+```
+
+### 配置文件挂载方式
+
+如需使用 `config.json` 而非环境变量：
+
+```yaml
+# docker-compose.yml
+services:
+  ds2api:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - DS2API_ADMIN_KEY=your-admin-key
+    volumes:
+      - ./config.json:/app/config.json:ro
+    restart: unless-stopped
+```
+
+### Docker 命令行部署
+
+```bash
+# 构建镜像
+docker build -t ds2api:latest .
+
+# 使用环境变量运行
+docker run -d \
+  --name ds2api \
+  -p 5001:5001 \
+  -e DS2API_ADMIN_KEY=your-admin-key \
+  -e DS2API_CONFIG_JSON='{"keys":["api-key"],"accounts":[...]}' \
+  --restart unless-stopped \
+  ds2api:latest
+
+# 或使用配置文件挂载
+docker run -d \
+  --name ds2api \
+  -p 5001:5001 \
+  -e DS2API_ADMIN_KEY=your-admin-key \
+  -v $(pwd)/config.json:/app/config.json:ro \
+  --restart unless-stopped \
+  ds2api:latest
+```
+
+### 开发模式（热重载）
+
+```bash
+# 使用开发配置启动，代码修改实时生效
+docker-compose -f docker-compose.dev.yml up
+```
+
+开发模式特性：
+- 源代码挂载到容器，修改即时生效
+- 日志级别设为 DEBUG
+- 自动读取本地 `config.json`
+
+### 维护命令
+
+```bash
+# 查看容器状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f ds2api
+
+# 重启服务
+docker-compose restart
+
+# 停止服务
+docker-compose down
+
+# 完全重建（清除缓存）
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
 ---
 
 ## 生产环境部署
@@ -210,52 +338,6 @@ server {
 }
 ```
 
-### Docker 部署（可选）
-
-```dockerfile
-# Dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-EXPOSE 5001
-CMD ["python", "app.py"]
-```
-
-```bash
-# 构建镜像
-docker build -t ds2api .
-
-# 运行容器
-docker run -d \
-  --name ds2api \
-  -p 5001:5001 \
-  -e DS2API_ADMIN_KEY=your-admin-key \
-  -e DS2API_CONFIG_JSON='{"keys":["api-key"],"accounts":[...]}' \
-  ds2api
-```
-
-### Docker Compose
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  ds2api:
-    build: .
-    ports:
-      - "5001:5001"
-    environment:
-      - DS2API_ADMIN_KEY=${DS2API_ADMIN_KEY}
-      - DS2API_CONFIG_JSON=${DS2API_CONFIG_JSON}
-    restart: unless-stopped
-```
-
 ---
 
 ## 常见问题
@@ -289,6 +371,15 @@ services:
 git pull origin main
 pip install -r requirements.txt
 # 重启服务
+```
+
+**Docker 部署**:
+```bash
+# 拉取最新代码
+git pull origin main
+
+# 重新构建并启动（无需修改 Docker 配置）
+docker-compose up -d --build
 ```
 
 **Vercel 部署**:

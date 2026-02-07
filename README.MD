@@ -4,8 +4,18 @@
 ![Stars](https://img.shields.io/github/stars/CJackHwang/ds2api.svg)
 ![Forks](https://img.shields.io/github/forks/CJackHwang/ds2api.svg)
 [![Version](https://img.shields.io/badge/version-1.6.11-blue.svg)](version.txt)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](DEPLOY.md#docker-部署推荐)
+
+语言 / Language: [中文](README.MD) | [English](README.en.md)
 
 将 DeepSeek 免费对话版转换为 **OpenAI & Claude 兼容 API**，支持多账号轮询、自动 Token 刷新、可视化管理界面。
+
+![p1](https://github.com/user-attachments/assets/07296a50-50d4-4f05-a9e5-280df14e9532)
+![p2](https://github.com/user-attachments/assets/03b4a763-766f-4050-aea8-1a183e70ae6a)
+![p3](https://github.com/user-attachments/assets/fc8b9836-11e3-4c38-a684-eb2c79b80fe9)
+![p4](https://github.com/user-attachments/assets/513e9ca7-aa9e-45a6-8f7e-f362b1650675)
+
+
 
 ## ✨ 特性
 
@@ -13,6 +23,7 @@
 - 🚀 **多账号轮询** - Round-Robin 负载均衡，支持高并发场景
 - 🔐 **Token 自动刷新** - 过期自动重新登录，无需手动维护
 - 🌐 **WebUI 管理** - 可视化添加账号、测试 API、同步 Vercel 配置
+- 🌍 **多语言切换** - WebUI 内置中英双语，可随时切换
 - 🔍 **联网搜索** - 支持 DeepSeek 原生搜索增强模式
 - 🧠 **深度思考** - 支持推理模式，输出思考过程
 - 🛠️ **工具调用** - 兼容 OpenAI Function Calling 格式
@@ -184,16 +195,25 @@ location / {
 }
 ```
 
-### Docker 部署（可选）
+### 方式三：Docker 部署
 
 ```bash
-# 使用环境变量配置
-docker run -d \
-  -p 5001:5001 \
-  -e DS2API_ADMIN_KEY=your-admin-key \
-  -e DS2API_CONFIG_JSON='{"keys":["api-key"],"accounts":[...]}' \
-  ds2api
+# 1. 克隆仓库并进入目录
+git clone https://github.com/CJackHwang/ds2api.git
+cd ds2api
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，填写 DS2API_ADMIN_KEY 和 DS2API_CONFIG_JSON
+
+# 3. 启动服务
+docker-compose up -d
+
+# 4. 查看日志
+docker-compose logs -f
 ```
+
+> **Docker 优势**：零侵入设计，主代码更新只需 `docker-compose up -d --build`，无需修改 Docker 配置。详见 [DEPLOY.md](DEPLOY.md#docker-部署推荐)。
 
 ## ⚠️ 免责声明
 

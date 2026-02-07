@@ -55,7 +55,8 @@ webui/node_modules/
 webui/dist/
 .npm
 .pnpm-store/
-package-lock.json
+# 保留 webui/package-lock.json 用于 CI 缓存
+# package-lock.json  # 如果有根目录的可以忽略
 yarn.lock
 pnpm-lock.yaml
 
@@ -63,6 +64,8 @@ pnpm-lock.yaml
 *.tsbuildinfo
 .cache/
 .parcel-cache/
+static/admin/*
+!static/admin/.gitkeep
 
 # Environment
 .env.local
