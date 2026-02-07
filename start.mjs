@@ -454,7 +454,11 @@ async function showMenu() {
   console.log(`  后端 (${CONFIG.backendPort}): ${running.backend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${running.backend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
   console.log(`  前端 (${CONFIG.frontendPort}): ${running.frontend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${running.frontend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
 
-  console.log(`\n${colors.bright}管理员密钥:${colors.reset} ${colors.cyan}${CONFIG.adminKey}${colors.reset}`);
+  console.log(`\n${colors.bright}环境变量:${colors.reset}`);
+  console.log(`  DS2API_ADMIN_KEY: ${colors.cyan}${CONFIG.adminKey}${colors.reset}`);
+  console.log(`  PORT:             ${colors.cyan}${CONFIG.backendPort}${colors.reset}`);
+  console.log(`  HOST:             ${colors.cyan}${CONFIG.host}${colors.reset}`);
+  console.log(`  LOG_LEVEL:        ${colors.cyan}${CONFIG.logLevel}${colors.reset}`);
   console.log(`${colors.dim}  自定义: DS2API_ADMIN_KEY=你的密钥 node start.mjs${colors.reset}`);
 
   console.log(`
