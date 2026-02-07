@@ -122,7 +122,8 @@
         "passwordLabel": "密码",
         "passwordPlaceholder": "账号密码",
         "addAccountLoading": "添加中...",
-        "addAccountAction": "添加账号"
+        "addAccountAction": "添加账号",
+        "pageInfo": "第 {current}/{total} 页，共 {count} 个账号"
     },
     "apiTester": {
         "defaultMessage": "你好，请用一句话介绍你自己。",

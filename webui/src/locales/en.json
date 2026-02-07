@@ -122,7 +122,8 @@
         "passwordLabel": "Password",
         "passwordPlaceholder": "Account password",
         "addAccountLoading": "Adding...",
-        "addAccountAction": "Add account"
+        "addAccountAction": "Add account",
+        "pageInfo": "Page {current}/{total}, {count} accounts total"
     },
     "apiTester": {
         "defaultMessage": "Hello, please introduce yourself in one sentence.",

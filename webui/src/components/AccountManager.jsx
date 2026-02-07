@@ -8,7 +8,10 @@ import {
     Server,
     ShieldCheck,
     Copy,
-    Check
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    ChevronDown
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useI18n } from '../i18n'
@@ -25,8 +28,35 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
     const [testingAll, setTestingAll] = useState(false)
     const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, results: [] })
     const [queueStatus, setQueueStatus] = useState(null)
+    const [keysExpanded, setKeysExpanded] = useState(false)
+
+    // 分页状态
+    const [accounts, setAccounts] = useState([])
+    const [page, setPage] = useState(1)
+    const [pageSize] = useState(10)
+    const [totalPages, setTotalPages] = useState(1)
+    const [totalAccounts, setTotalAccounts] = useState(0)
+    const [loadingAccounts, setLoadingAccounts] = useState(false)
 
     const apiFetch = authFetch || fetch
+
+    const fetchAccounts = async (targetPage = page) => {
+        setLoadingAccounts(true)
+        try {
+            const res = await apiFetch(`/admin/accounts?page=${targetPage}&page_size=${pageSize}`)
+            if (res.ok) {
+                const data = await res.json()
+                setAccounts(data.items || [])
+                setTotalPages(data.total_pages || 1)
+                setTotalAccounts(data.total || 0)
+                setPage(data.page || 1)
+            }
+        } catch (e) {
+            console.error('Failed to fetch accounts:', e)
+        } finally {
+            setLoadingAccounts(false)
+        }
+    }
 
     const fetchQueueStatus = async () => {
         try {
@@ -41,6 +71,7 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
     }
 
     useEffect(() => {
+        fetchAccounts()
         fetchQueueStatus()
         const interval = setInterval(fetchQueueStatus, 5000)
         return () => clearInterval(interval)
@@ -102,6 +133,7 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                 onMessage('success', t('accountManager.addAccountSuccess'))
                 setNewAccount({ email: '', mobile: '', password: '' })
                 setShowAddAccount(false)
+                fetchAccounts(1) // 添加后回到第一页
                 onRefresh()
             } else {
                 const data = await res.json()
@@ -120,6 +152,7 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
             const res = await apiFetch(`/admin/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' })
             if (res.ok) {
                 onMessage('success', t('messages.deleted'))
+                fetchAccounts() // 刷新当前页
                 onRefresh()
             } else {
                 onMessage('error', t('messages.deleteFailed'))
@@ -142,6 +175,7 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                 ? t('apiTester.testSuccess', { account: identifier, time: data.response_time })
                 : `${identifier}: ${data.message}`
             onMessage(data.success ? 'success' : 'error', statusMessage)
+            fetchAccounts() // 刷新当前页
             onRefresh()
         } catch (e) {
             onMessage('error', t('accountManager.testFailed', { error: e.message }))
@@ -152,17 +186,17 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
 
     const testAllAccounts = async () => {
         if (!confirm(t('accountManager.testAllConfirm'))) return
-        const accounts = config.accounts || []
-        if (accounts.length === 0) return
+        const allAccounts = config.accounts || []
+        if (allAccounts.length === 0) return
 
         setTestingAll(true)
-        setBatchProgress({ current: 0, total: accounts.length, results: [] })
+        setBatchProgress({ current: 0, total: allAccounts.length, results: [] })
 
         let successCount = 0
         const results = []
 
-        for (let i = 0; i < accounts.length; i++) {
-            const acc = accounts[i]
+        for (let i = 0; i < allAccounts.length; i++) {
+            const acc = allAccounts[i]
             const id = acc.email || acc.mobile
 
             try {
@@ -178,10 +212,11 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                 results.push({ id, success: false, message: e.message })
             }
 
-            setBatchProgress({ current: i + 1, total: accounts.length, results: [...results] })
+            setBatchProgress({ current: i + 1, total: allAccounts.length, results: [...results] })
         }
 
-        onMessage('success', t('accountManager.testAllCompleted', { success: successCount, total: accounts.length }))
+        onMessage('success', t('accountManager.testAllCompleted', { success: successCount, total: allAccounts.length }))
+        fetchAccounts() // 刷新当前页
         onRefresh()
         setTestingAll(false)
     }
@@ -228,13 +263,22 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
 
             {/* API Keys Section */}
             <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <h2 className="text-lg font-semibold">{t('accountManager.apiKeysTitle')}</h2>
-                        <p className="text-sm text-muted-foreground">{t('accountManager.apiKeysDesc')}</p>
+                <div
+                    className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+                    onClick={() => setKeysExpanded(!keysExpanded)}
+                >
+                    <div className="flex items-center gap-3">
+                        <ChevronDown className={clsx(
+                            "w-5 h-5 text-muted-foreground transition-transform duration-200",
+                            keysExpanded ? "rotate-0" : "-rotate-90"
+                        )} />
+                        <div>
+                            <h2 className="text-lg font-semibold">{t('accountManager.apiKeysTitle')}</h2>
+                            <p className="text-sm text-muted-foreground">{t('accountManager.apiKeysDesc')} ({config.keys?.length || 0})</p>
+                        </div>
                     </div>
                     <button
-                        onClick={() => setShowAddKey(true)}
+                        onClick={(e) => { e.stopPropagation(); setShowAddKey(true) }}
                         className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium text-sm shadow-sm"
                     >
                         <Plus className="w-4 h-4" />
@@ -242,44 +286,46 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                     </button>
                 </div>
 
-                <div className="divide-y divide-border">
-                    {config.keys?.length > 0 ? (
-                        config.keys.map((key, i) => (
-                            <div key={i} className="p-4 flex items-center justify-between hover:bg-muted/50 transition-colors group">
-                                <div className="flex items-center gap-2">
-                                    <div className="font-mono text-sm bg-muted/50 px-3 py-1 rounded inline-block">
-                                        {key.slice(0, 16)}****
+                {keysExpanded && (
+                    <div className="divide-y divide-border border-t border-border">
+                        {config.keys?.length > 0 ? (
+                            config.keys.map((key, i) => (
+                                <div key={i} className="p-4 flex items-center justify-between hover:bg-muted/50 transition-colors group">
+                                    <div className="flex items-center gap-2">
+                                        <div className="font-mono text-sm bg-muted/50 px-3 py-1 rounded inline-block">
+                                            {key.slice(0, 16)}****
+                                        </div>
+                                        {copiedKey === key && (
+                                            <span className="text-xs text-green-500 animate-pulse">{t('accountManager.copied')}</span>
+                                        )}
                                     </div>
-                                    {copiedKey === key && (
-                                        <span className="text-xs text-green-500 animate-pulse">{t('accountManager.copied')}</span>
-                                    )}
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(key)
+                                                setCopiedKey(key)
+                                                setTimeout(() => setCopiedKey(null), 2000)
+                                            }}
+                                            className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                            title={t('accountManager.copyKeyTitle')}
+                                        >
+                                            {copiedKey === key ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                                        </button>
+                                        <button
+                                            onClick={() => deleteKey(key)}
+                                            className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                            title={t('accountManager.deleteKeyTitle')}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(key)
-                                            setCopiedKey(key)
-                                            setTimeout(() => setCopiedKey(null), 2000)
-                                        }}
-                                        className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                                        title={t('accountManager.copyKeyTitle')}
-                                    >
-                                        {copiedKey === key ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                                    </button>
-                                    <button
-                                        onClick={() => deleteKey(key)}
-                                        className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                                        title={t('accountManager.deleteKeyTitle')}
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <div className="p-8 text-center text-muted-foreground">{t('accountManager.noApiKeys')}</div>
-                    )}
-                </div>
+                            ))
+                        ) : (
+                            <div className="p-8 text-center text-muted-foreground">{t('accountManager.noApiKeys')}</div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Accounts Section */}
@@ -292,7 +338,7 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                     <div className="flex flex-wrap gap-2">
                         <button
                             onClick={testAllAccounts}
-                            disabled={testingAll || !config.accounts?.length}
+                            disabled={testingAll || totalAccounts === 0}
                             className="flex items-center px-3 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-xs font-medium border border-border disabled:opacity-50"
                         >
                             {testingAll ? <span className="animate-spin mr-2">⟳</span> : <Play className="w-3 h-3 mr-2" />}
@@ -337,8 +383,10 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                 )}
 
                 <div className="divide-y divide-border">
-                    {config.accounts?.length > 0 ? (
-                        config.accounts.map((acc, i) => {
+                    {loadingAccounts ? (
+                        <div className="p-8 text-center text-muted-foreground">{t('actions.loading')}</div>
+                    ) : accounts.length > 0 ? (
+                        accounts.map((acc, i) => {
                             const id = acc.email || acc.mobile
                             return (
                                 <div key={i} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-muted/50 transition-colors">
@@ -381,6 +429,32 @@ export default function AccountManager({ config, onRefresh, onMessage, authFetch
                         <div className="p-8 text-center text-muted-foreground">{t('accountManager.noAccounts')}</div>
                     )}
                 </div>
+
+                {/* 分页控件 */}
+                {totalPages > 1 && (
+                    <div className="p-4 border-t border-border flex items-center justify-between">
+                        <div className="text-sm text-muted-foreground">
+                            {t('accountManager.pageInfo', { current: page, total: totalPages, count: totalAccounts })}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => fetchAccounts(page - 1)}
+                                disabled={page <= 1 || loadingAccounts}
+                                className="p-2 border border-border rounded-md hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <span className="text-sm font-medium px-2">{page} / {totalPages}</span>
+                            <button
+                                onClick={() => fetchAccounts(page + 1)}
+                                disabled={page >= totalPages || loadingAccounts}
+                                className="p-2 border border-border rounded-md hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Modals */}

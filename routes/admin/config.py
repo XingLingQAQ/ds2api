@@ -122,6 +122,49 @@ async def delete_key(key: str, _: bool = Depends(verify_admin)):
 # ----------------------------------------------------------------------
 # 账号管理
 # ----------------------------------------------------------------------
+@router.get("/accounts")
+async def list_accounts(
+    page: int = 1,
+    page_size: int = 10,
+    _: bool = Depends(verify_admin)
+):
+    """获取账号列表（分页，倒序，密码脱敏）"""
+    accounts = CONFIG.get("accounts", [])
+    total = len(accounts)
+
+    # 倒序排列
+    accounts = list(reversed(accounts))
+
+    # 计算分页
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))  # 限制每页最多 100 条
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_accounts = accounts[start:end]
+
+    # 脱敏处理
+    safe_accounts = []
+    for acc in page_accounts:
+        safe_acc = {
+            "email": acc.get("email", ""),
+            "mobile": acc.get("mobile", ""),
+            "has_password": bool(acc.get("password")),
+            "has_token": bool(acc.get("token")),
+            "token_preview": acc.get("token", "")[:20] + "..." if acc.get("token") else "",
+        }
+        safe_accounts.append(safe_acc)
+
+    return JSONResponse(content={
+        "items": safe_accounts,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    })
+
+
 @router.post("/accounts")
 async def add_account(request: Request, _: bool = Depends(verify_admin)):
     """添加账号"""
