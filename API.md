@@ -246,9 +246,9 @@ data: [DONE]
 {
   "object": "list",
   "data": [
-    {"id": "claude-sonnet-4-20250514", "object": "model", "created": 1715635200, "owned_by": "anthropic"},
-    {"id": "claude-sonnet-4-20250514-fast", "object": "model", "created": 1715635200, "owned_by": "anthropic"},
-    {"id": "claude-sonnet-4-20250514-slow", "object": "model", "created": 1715635200, "owned_by": "anthropic"}
+    {"id": "claude-sonnet-4-5", "object": "model", "created": 1715635200, "owned_by": "anthropic"},
+    {"id": "claude-3-5-haiku-latest", "object": "model", "created": 1715635200, "owned_by": "anthropic"},
+    {"id": "claude-opus-4-6", "object": "model", "created": 1715635200, "owned_by": "anthropic"}
   ]
 }
 ```
@@ -267,7 +267,7 @@ anthropic-version: 2023-06-01
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `model` | string | ✅ | `claude-sonnet-4-20250514` / `-fast` / `-slow` |
+| `model` | string | ✅ | `claude-sonnet-4-5` / `claude-opus-4-6` / `claude-3-5-haiku-latest` |
 | `messages` | array | ✅ | Claude 风格消息数组 |
 | `max_tokens` | number | ❌ | 当前实现不会硬性截断上游输出 |
 | `stream` | boolean | ❌ | 默认 `false` |
@@ -281,7 +281,7 @@ anthropic-version: 2023-06-01
   "id": "msg_1738400000000000000",
   "type": "message",
   "role": "assistant",
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-5",
   "content": [
     {"type": "text", "text": "回复内容"}
   ],
@@ -325,7 +325,7 @@ data: {"type":"message_stop"}
 
 **说明**：
 
-- 思维模型（`-slow`）会输出 `thinking_delta`
+- 名称中包含 `opus` / `reasoner` / `slow` 的模型会输出 `thinking_delta`
 - 不会输出 `signature_delta`（上游 DeepSeek 未提供可验证签名）
 - `tools` 场景优先避免泄露原始工具 JSON，不强制发送 `input_json_delta`
 
@@ -335,7 +335,7 @@ data: {"type":"message_stop"}
 
 ```json
 {
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-5",
   "messages": [
     {"role": "user", "content": "你好"}
   ]
@@ -754,7 +754,7 @@ curl http://localhost:5001/anthropic/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
   -d '{
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-4-5",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "你好"}]
   }'
@@ -768,7 +768,7 @@ curl http://localhost:5001/anthropic/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
   -d '{
-    "model": "claude-sonnet-4-20250514-slow",
+    "model": "claude-opus-4-6",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "解释相对论"}],
     "stream": true

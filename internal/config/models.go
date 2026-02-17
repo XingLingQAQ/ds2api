@@ -16,9 +16,13 @@ var DeepSeekModels = []ModelInfo{
 }
 
 var ClaudeModels = []ModelInfo{
-	{ID: "claude-sonnet-4-20250514", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
-	{ID: "claude-sonnet-4-20250514-fast", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
-	{ID: "claude-sonnet-4-20250514-slow", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-sonnet-4-5", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-sonnet-4-5-20250929", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-opus-4-6", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-opus-4-1", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-opus-4-1-20250805", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-3-7-sonnet-latest", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
+	{ID: "claude-3-5-haiku-latest", Object: "model", Created: 1715635200, OwnedBy: "anthropic"},
 }
 
 func GetModelConfig(model string) (thinking bool, search bool, ok bool) {

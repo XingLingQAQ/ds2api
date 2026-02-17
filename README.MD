@@ -79,9 +79,9 @@ flowchart LR
 
 | 模型 | 默认映射 |
 | --- | --- |
-| `claude-sonnet-4-20250514` | `deepseek-chat` |
-| `claude-sonnet-4-20250514-fast` | `deepseek-chat` |
-| `claude-sonnet-4-20250514-slow` | `deepseek-reasoner` |
+| `claude-sonnet-4-5` | `deepseek-chat` |
+| `claude-3-5-haiku-latest` | `deepseek-chat` |
+| `claude-opus-4-6` | `deepseek-reasoner` |
 
 可通过配置中的 `claude_mapping` 或 `claude_model_mapping` 覆盖映射关系。
 

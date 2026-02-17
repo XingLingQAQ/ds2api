@@ -79,9 +79,9 @@ flowchart LR
 
 | Model | Default Mapping |
 | --- | --- |
-| `claude-sonnet-4-20250514` | `deepseek-chat` |
-| `claude-sonnet-4-20250514-fast` | `deepseek-chat` |
-| `claude-sonnet-4-20250514-slow` | `deepseek-reasoner` |
+| `claude-sonnet-4-5` | `deepseek-chat` |
+| `claude-3-5-haiku-latest` | `deepseek-chat` |
+| `claude-opus-4-6` | `deepseek-reasoner` |
 
 Override mapping via `claude_mapping` or `claude_model_mapping` in config.
 
