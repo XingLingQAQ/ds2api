@@ -48,17 +48,9 @@ func BuildResponseObject(responseID, model, finalPrompt, finalThinking, finalTex
 	output := make([]any, 0, 2)
 	if len(detected) > 0 {
 		exposedOutputText = ""
-		toolCalls := make([]any, 0, len(detected))
-		for _, tc := range detected {
-			toolCalls = append(toolCalls, map[string]any{
-				"type":      "tool_call",
-				"name":      tc.Name,
-				"arguments": tc.Input,
-			})
-		}
 		output = append(output, map[string]any{
 			"type":       "tool_calls",
-			"tool_calls": toolCalls,
+			"tool_calls": util.FormatOpenAIToolCalls(detected),
 		})
 	} else {
 		content := []any{

@@ -54,8 +54,12 @@ func TestHandleResponsesStreamToolCallsHideRawOutputTextInCompleted(t *testing.T
 		t.Fatalf("expected at least one tool_call in output, got %#v", first["tool_calls"])
 	}
 	call0, _ := toolCalls[0].(map[string]any)
-	if call0["name"] != "read_file" {
-		t.Fatalf("unexpected tool call name: %#v", call0["name"])
+	if call0["type"] != "function" {
+		t.Fatalf("unexpected tool call type: %#v", call0["type"])
+	}
+	fn, _ := call0["function"].(map[string]any)
+	if fn["name"] != "read_file" {
+		t.Fatalf("unexpected tool call name: %#v", fn["name"])
 	}
 	if strings.Contains(outputText, `"tool_calls"`) {
 		t.Fatalf("raw tool_calls JSON leaked in output_text: %q", outputText)
