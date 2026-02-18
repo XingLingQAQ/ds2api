@@ -62,3 +62,16 @@ func TestFormatOpenAIToolCalls(t *testing.T) {
 		t.Fatalf("unexpected function name: %#v", fn)
 	}
 }
+
+func TestParseStandaloneToolCallsOnlyMatchesStandalonePayload(t *testing.T) {
+	mixed := `这里是示例：{"tool_calls":[{"name":"search","input":{"q":"go"}}]}`
+	if calls := ParseStandaloneToolCalls(mixed, []string{"search"}); len(calls) != 0 {
+		t.Fatalf("expected standalone parser to ignore mixed prose, got %#v", calls)
+	}
+
+	standalone := `{"tool_calls":[{"name":"search","input":{"q":"go"}}]}`
+	calls := ParseStandaloneToolCalls(standalone, []string{"search"})
+	if len(calls) != 1 {
+		t.Fatalf("expected standalone parser to match, got %#v", calls)
+	}
+}

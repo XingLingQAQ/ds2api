@@ -49,12 +49,13 @@ test('parseChunkForContent + sieve does not leak suspicious prefix in split tool
   events.push(...flushToolSieve(state, ['read_file']));
 
   const hasToolCalls = events.some((evt) => evt.type === 'tool_calls' && evt.calls && evt.calls.length > 0);
+  const hasToolDeltas = events.some((evt) => evt.type === 'tool_call_deltas' && evt.deltas && evt.deltas.length > 0);
   const leakedText = events
     .filter((evt) => evt.type === 'text' && evt.text)
     .map((evt) => evt.text)
     .join('');
 
-  assert.equal(hasToolCalls, true);
+  assert.equal(hasToolCalls || hasToolDeltas, true);
   assert.equal(leakedText.includes('{'), false);
   assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
 });

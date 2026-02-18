@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
@@ -134,7 +135,7 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 
 	finalThinking := result.Thinking
 	finalText := result.Text
-	detected := util.ParseToolCalls(finalText, toolNames)
+	detected := util.ParseStandaloneToolCalls(finalText, toolNames)
 	finishReason := "stop"
 	messageObj := map[string]any{"role": "assistant", "content": finalText}
 	if thinkingEnabled && finalThinking != "" {
@@ -188,6 +189,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 	bufferToolContent := len(toolNames) > 0
 	var toolSieve toolStreamSieveState
 	toolCallsEmitted := false
+	streamToolCallIDs := map[int]string{}
 	initialType := "text"
 	if thinkingEnabled {
 		initialType = "thinking"
@@ -220,7 +222,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 	finalize := func(finishReason string) {
 		finalThinking := thinking.String()
 		finalText := text.String()
-		detected := util.ParseToolCalls(finalText, toolNames)
+		detected := util.ParseStandaloneToolCalls(finalText, toolNames)
 		if len(detected) > 0 && !toolCallsEmitted {
 			finishReason = "tool_calls"
 			delta := map[string]any{
@@ -352,6 +354,21 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 							// Keep thinking delta only frame.
 						}
 						for _, evt := range events {
+							if len(evt.ToolCallDeltas) > 0 {
+								toolCallsEmitted = true
+								tcDelta := map[string]any{
+									"tool_calls": formatIncrementalStreamToolCallDeltas(evt.ToolCallDeltas, streamToolCallIDs),
+								}
+								if !firstChunkSent {
+									tcDelta["role"] = "assistant"
+									firstChunkSent = true
+								}
+								newChoices = append(newChoices, map[string]any{
+									"delta": tcDelta,
+									"index": 0,
+								})
+								continue
+							}
 							if len(evt.ToolCalls) > 0 {
 								toolCallsEmitted = true
 								tcDelta := map[string]any{
@@ -439,6 +456,40 @@ func injectToolPrompt(messages []map[string]any, tools []any) ([]map[string]any,
 	}
 	messages = append([]map[string]any{{"role": "system", "content": toolPrompt}}, messages...)
 	return messages, names
+}
+
+func formatIncrementalStreamToolCallDeltas(deltas []toolCallDelta, ids map[int]string) []map[string]any {
+	if len(deltas) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(deltas))
+	for _, d := range deltas {
+		if d.Name == "" && d.Arguments == "" {
+			continue
+		}
+		callID, ok := ids[d.Index]
+		if !ok || callID == "" {
+			callID = "call_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+			ids[d.Index] = callID
+		}
+		item := map[string]any{
+			"index": d.Index,
+			"id":    callID,
+			"type":  "function",
+		}
+		fn := map[string]any{}
+		if d.Name != "" {
+			fn["name"] = d.Name
+		}
+		if d.Arguments != "" {
+			fn["arguments"] = d.Arguments
+		}
+		if len(fn) > 0 {
+			item["function"] = fn
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func writeOpenAIError(w http.ResponseWriter, status int, message string) {

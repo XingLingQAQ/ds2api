@@ -9,6 +9,7 @@ const {
   processToolSieveChunk,
   flushToolSieve,
   parseToolCalls,
+  parseStandaloneToolCalls,
 } = require('./stream-tool-sieve');
 
 function runSieve(chunks, toolNames) {
@@ -73,6 +74,15 @@ test('parseToolCalls supports fenced json and function.arguments string payload'
   assert.deepEqual(calls[0].input, { path: 'README.md' });
 });
 
+test('parseStandaloneToolCalls only matches standalone payload and ignores mixed prose', () => {
+  const mixed = '这里是示例：{"tool_calls":[{"name":"read_file","input":{"path":"README.MD"}}]}，请勿执行。';
+  const standalone = '{"tool_calls":[{"name":"read_file","input":{"path":"README.MD"}}]}';
+  const mixedCalls = parseStandaloneToolCalls(mixed, ['read_file']);
+  const standaloneCalls = parseStandaloneToolCalls(standalone, ['read_file']);
+  assert.equal(mixedCalls.length, 0);
+  assert.equal(standaloneCalls.length, 1);
+});
+
 test('sieve emits tool_calls and does not leak suspicious prefix on late key convergence', () => {
   const events = runSieve(
     [
@@ -84,13 +94,14 @@ test('sieve emits tool_calls and does not leak suspicious prefix on late key con
   );
   const leakedText = collectText(events);
   const hasToolCall = events.some((evt) => evt.type === 'tool_calls' && Array.isArray(evt.calls) && evt.calls.length > 0);
-  assert.equal(hasToolCall, true);
+  const hasToolDelta = events.some((evt) => evt.type === 'tool_call_deltas' && Array.isArray(evt.deltas) && evt.deltas.length > 0);
+  assert.equal(hasToolCall || hasToolDelta, true);
   assert.equal(leakedText.includes('{'), false);
   assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
   assert.equal(leakedText.includes('后置正文C。'), true);
 });
 
-test('sieve drops invalid tool json body while preserving surrounding text', () => {
+test('sieve keeps embedded invalid tool-like json as normal text to avoid stream stalls', () => {
   const events = runSieve(
     [
       '前置正文D。',
@@ -104,18 +115,18 @@ test('sieve drops invalid tool json body while preserving surrounding text', () 
   assert.equal(hasToolCall, false);
   assert.equal(leakedText.includes('前置正文D。'), true);
   assert.equal(leakedText.includes('后置正文E。'), true);
-  assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
+  assert.equal(leakedText.toLowerCase().includes('tool_calls'), true);
 });
 
-test('sieve suppresses incomplete captured tool json on stream finalize', () => {
+test('sieve flushes incomplete captured tool json as text on stream finalize', () => {
   const events = runSieve(
     ['前置正文F。', '{"tool_calls":[{"name":"read_file"'],
     ['read_file'],
   );
   const leakedText = collectText(events);
   assert.equal(leakedText.includes('前置正文F。'), true);
-  assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
-  assert.equal(leakedText.includes('{'), false);
+  assert.equal(leakedText.toLowerCase().includes('tool_calls'), true);
+  assert.equal(leakedText.includes('{'), true);
 });
 
 test('sieve keeps plain text intact in tool mode when no tool call appears', () => {
@@ -127,4 +138,30 @@ test('sieve keeps plain text intact in tool mode when no tool call appears', () 
   const hasToolCall = events.some((evt) => evt.type === 'tool_calls');
   assert.equal(hasToolCall, false);
   assert.equal(leakedText, '你好，这是普通文本回复。请继续。');
+});
+
+test('sieve emits incremental tool_call_deltas for split arguments payload', () => {
+  const state = createToolSieveState();
+  const first = processToolSieveChunk(
+    state,
+    '{"tool_calls":[{"name":"read_file","input":{"path":"READ',
+    ['read_file'],
+  );
+  const second = processToolSieveChunk(
+    state,
+    'ME.MD","mode":"head"}}]}',
+    ['read_file'],
+  );
+  const tail = flushToolSieve(state, ['read_file']);
+  const events = [...first, ...second, ...tail];
+  const deltaEvents = events.filter((evt) => evt.type === 'tool_call_deltas');
+  assert.equal(deltaEvents.length > 0, true);
+  const merged = deltaEvents.flatMap((evt) => evt.deltas || []);
+  const hasName = merged.some((d) => d.name === 'read_file');
+  const argsJoined = merged
+    .map((d) => d.arguments || '')
+    .join('');
+  assert.equal(hasName, true);
+  assert.equal(argsJoined.includes('"path":"README.MD"'), true);
+  assert.equal(argsJoined.includes('"mode":"head"'), true);
 });

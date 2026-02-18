@@ -7,14 +7,39 @@ import (
 )
 
 type toolStreamSieveState struct {
-	pending   strings.Builder
-	capture   strings.Builder
-	capturing bool
+	pending           strings.Builder
+	capture           strings.Builder
+	capturing         bool
+	hasMeaningfulText bool
+	toolNameSent      bool
+	toolName          string
+	toolArgsStart     int
+	toolArgsSent      int
+	toolArgsString    bool
+	toolArgsDone      bool
 }
 
 type toolStreamEvent struct {
-	Content   string
-	ToolCalls []util.ParsedToolCall
+	Content        string
+	ToolCalls      []util.ParsedToolCall
+	ToolCallDeltas []toolCallDelta
+}
+
+type toolCallDelta struct {
+	Index     int
+	Name      string
+	Arguments string
+}
+
+const toolSieveCaptureLimit = 8 * 1024
+
+func (s *toolStreamSieveState) resetIncrementalToolState() {
+	s.toolNameSent = false
+	s.toolName = ""
+	s.toolArgsStart = -1
+	s.toolArgsSent = -1
+	s.toolArgsString = false
+	s.toolArgsDone = false
 }
 
 func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames []string) []toolStreamEvent {
@@ -32,13 +57,31 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 				state.capture.WriteString(state.pending.String())
 				state.pending.Reset()
 			}
-			prefix, calls, suffix, ready := consumeToolCapture(state.capture.String(), toolNames)
+			if deltas := buildIncrementalToolDeltas(state); len(deltas) > 0 {
+				events = append(events, toolStreamEvent{ToolCallDeltas: deltas})
+			}
+			prefix, calls, suffix, ready := consumeToolCapture(state, toolNames)
 			if !ready {
+				if state.capture.Len() > toolSieveCaptureLimit {
+					content := state.capture.String()
+					state.capture.Reset()
+					state.capturing = false
+					state.resetIncrementalToolState()
+					if strings.TrimSpace(content) != "" {
+						state.hasMeaningfulText = true
+					}
+					events = append(events, toolStreamEvent{Content: content})
+					continue
+				}
 				break
 			}
 			state.capture.Reset()
 			state.capturing = false
+			state.resetIncrementalToolState()
 			if prefix != "" {
+				if strings.TrimSpace(prefix) != "" {
+					state.hasMeaningfulText = true
+				}
 				events = append(events, toolStreamEvent{Content: prefix})
 			}
 			if len(calls) > 0 {
@@ -58,11 +101,15 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 		if start >= 0 {
 			prefix := pending[:start]
 			if prefix != "" {
+				if strings.TrimSpace(prefix) != "" {
+					state.hasMeaningfulText = true
+				}
 				events = append(events, toolStreamEvent{Content: prefix})
 			}
 			state.pending.Reset()
 			state.capture.WriteString(pending[start:])
 			state.capturing = true
+			state.resetIncrementalToolState()
 			continue
 		}
 
@@ -72,6 +119,9 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 		}
 		state.pending.Reset()
 		state.pending.WriteString(hold)
+		if strings.TrimSpace(safe) != "" {
+			state.hasMeaningfulText = true
+		}
 		events = append(events, toolStreamEvent{Content: safe})
 	}
 
@@ -84,25 +134,42 @@ func flushToolSieve(state *toolStreamSieveState, toolNames []string) []toolStrea
 	}
 	events := processToolSieveChunk(state, "", toolNames)
 	if state.capturing {
-		consumedPrefix, consumedCalls, consumedSuffix, ready := consumeToolCapture(state.capture.String(), toolNames)
+		consumedPrefix, consumedCalls, consumedSuffix, ready := consumeToolCapture(state, toolNames)
 		if ready {
 			if consumedPrefix != "" {
+				if strings.TrimSpace(consumedPrefix) != "" {
+					state.hasMeaningfulText = true
+				}
 				events = append(events, toolStreamEvent{Content: consumedPrefix})
 			}
 			if len(consumedCalls) > 0 {
 				events = append(events, toolStreamEvent{ToolCalls: consumedCalls})
 			}
 			if consumedSuffix != "" {
+				if strings.TrimSpace(consumedSuffix) != "" {
+					state.hasMeaningfulText = true
+				}
 				events = append(events, toolStreamEvent{Content: consumedSuffix})
 			}
 		} else {
-			// Incomplete captured tool JSON at stream end: suppress raw capture.
+			content := state.capture.String()
+			if content != "" {
+				if strings.TrimSpace(content) != "" {
+					state.hasMeaningfulText = true
+				}
+				events = append(events, toolStreamEvent{Content: content})
+			}
 		}
 		state.capture.Reset()
 		state.capturing = false
+		state.resetIncrementalToolState()
 	}
 	if state.pending.Len() > 0 {
-		events = append(events, toolStreamEvent{Content: state.pending.String()})
+		content := state.pending.String()
+		if strings.TrimSpace(content) != "" {
+			state.hasMeaningfulText = true
+		}
+		events = append(events, toolStreamEvent{Content: content})
 		state.pending.Reset()
 	}
 	return events
@@ -154,7 +221,8 @@ func findToolSegmentStart(s string) int {
 	return keyIdx
 }
 
-func consumeToolCapture(captured string, toolNames []string) (prefix string, calls []util.ParsedToolCall, suffix string, ready bool) {
+func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix string, calls []util.ParsedToolCall, suffix string, ready bool) {
+	captured := state.capture.String()
 	if captured == "" {
 		return "", nil, "", false
 	}
@@ -171,13 +239,25 @@ func consumeToolCapture(captured string, toolNames []string) (prefix string, cal
 	if !ok {
 		return "", nil, "", false
 	}
-	parsed := util.ParseToolCalls(obj, toolNames)
-	if len(parsed) == 0 {
-		// `tool_calls` key exists but strict JSON parse failed.
-		// Drop the captured object body to avoid leaking raw tool JSON.
-		return captured[:start], nil, captured[end:], true
+	prefixPart := captured[:start]
+	suffixPart := captured[end:]
+	if !state.toolNameSent && (state.hasMeaningfulText || strings.TrimSpace(prefixPart) != "" || strings.TrimSpace(suffixPart) != "") {
+		return captured, nil, "", true
 	}
-	return captured[:start], parsed, captured[end:], true
+	parsed := util.ParseStandaloneToolCalls(obj, toolNames)
+	if len(parsed) == 0 {
+		if state.toolNameSent {
+			return prefixPart, nil, suffixPart, true
+		}
+		return captured, nil, "", true
+	}
+	if state.toolNameSent {
+		if len(parsed) > 1 {
+			return prefixPart, parsed[1:], suffixPart, true
+		}
+		return prefixPart, nil, suffixPart, true
+	}
+	return prefixPart, parsed, suffixPart, true
 }
 
 func extractJSONObjectFrom(text string, start int) (string, int, bool) {
@@ -220,4 +300,321 @@ func extractJSONObjectFrom(text string, start int) (string, int, bool) {
 		}
 	}
 	return "", 0, false
+}
+
+func buildIncrementalToolDeltas(state *toolStreamSieveState) []toolCallDelta {
+	captured := state.capture.String()
+	if captured == "" || state.hasMeaningfulText {
+		return nil
+	}
+	lower := strings.ToLower(captured)
+	keyIdx := strings.Index(lower, "tool_calls")
+	if keyIdx < 0 {
+		return nil
+	}
+	start := strings.LastIndex(captured[:keyIdx], "{")
+	if start < 0 || strings.TrimSpace(captured[:start]) != "" {
+		return nil
+	}
+	callStart, ok := findFirstToolCallObjectStart(captured, keyIdx)
+	if !ok {
+		return nil
+	}
+	deltas := make([]toolCallDelta, 0, 2)
+	if state.toolName == "" {
+		name, ok := extractToolCallName(captured, callStart)
+		if !ok || name == "" {
+			return nil
+		}
+		state.toolName = name
+	}
+	if state.toolArgsStart < 0 {
+		argsStart, stringMode, ok := findToolCallArgsStart(captured, callStart)
+		if ok {
+			state.toolArgsString = stringMode
+			if stringMode {
+				state.toolArgsStart = argsStart + 1
+			} else {
+				state.toolArgsStart = argsStart
+			}
+			state.toolArgsSent = state.toolArgsStart
+		}
+	}
+	if !state.toolNameSent {
+		if state.toolArgsStart < 0 {
+			return nil
+		}
+		state.toolNameSent = true
+		deltas = append(deltas, toolCallDelta{Index: 0, Name: state.toolName})
+	}
+	if state.toolArgsStart < 0 || state.toolArgsDone {
+		return deltas
+	}
+	end, complete, ok := scanToolCallArgsProgress(captured, state.toolArgsStart, state.toolArgsString)
+	if !ok {
+		return deltas
+	}
+	if end > state.toolArgsSent {
+		deltas = append(deltas, toolCallDelta{
+			Index:     0,
+			Arguments: captured[state.toolArgsSent:end],
+		})
+		state.toolArgsSent = end
+	}
+	if complete {
+		state.toolArgsDone = true
+	}
+	return deltas
+}
+
+func findFirstToolCallObjectStart(text string, keyIdx int) (int, bool) {
+	arrStart, ok := findToolCallsArrayStart(text, keyIdx)
+	if !ok {
+		return -1, false
+	}
+	i := skipSpaces(text, arrStart+1)
+	if i >= len(text) || text[i] != '{' {
+		return -1, false
+	}
+	return i, true
+}
+
+func findToolCallsArrayStart(text string, keyIdx int) (int, bool) {
+	i := keyIdx + len("tool_calls")
+	for i < len(text) && text[i] != ':' {
+		i++
+	}
+	if i >= len(text) {
+		return -1, false
+	}
+	i = skipSpaces(text, i+1)
+	if i >= len(text) || text[i] != '[' {
+		return -1, false
+	}
+	return i, true
+}
+
+func extractToolCallName(text string, callStart int) (string, bool) {
+	valueStart, ok := findObjectFieldValueStart(text, callStart, []string{"name"})
+	if !ok || valueStart >= len(text) || text[valueStart] != '"' {
+		fnStart, fnOK := findFunctionObjectStart(text, callStart)
+		if !fnOK {
+			return "", false
+		}
+		valueStart, ok = findObjectFieldValueStart(text, fnStart, []string{"name"})
+		if !ok || valueStart >= len(text) || text[valueStart] != '"' {
+			return "", false
+		}
+	}
+	name, _, ok := parseJSONStringLiteral(text, valueStart)
+	if !ok {
+		return "", false
+	}
+	return name, true
+}
+
+func findToolCallArgsStart(text string, callStart int) (int, bool, bool) {
+	keys := []string{"input", "arguments", "args", "parameters", "params"}
+	valueStart, ok := findObjectFieldValueStart(text, callStart, keys)
+	if !ok {
+		fnStart, fnOK := findFunctionObjectStart(text, callStart)
+		if !fnOK {
+			return -1, false, false
+		}
+		valueStart, ok = findObjectFieldValueStart(text, fnStart, keys)
+		if !ok {
+			return -1, false, false
+		}
+	}
+	if valueStart >= len(text) {
+		return -1, false, false
+	}
+	ch := text[valueStart]
+	if ch == '{' || ch == '[' {
+		return valueStart, false, true
+	}
+	if ch == '"' {
+		return valueStart, true, true
+	}
+	return -1, false, false
+}
+
+func scanToolCallArgsProgress(text string, start int, stringMode bool) (int, bool, bool) {
+	if start < 0 || start > len(text) {
+		return 0, false, false
+	}
+	if stringMode {
+		escaped := false
+		for i := start; i < len(text); i++ {
+			ch := text[i]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				return i, true, true
+			}
+		}
+		return len(text), false, true
+	}
+	if start >= len(text) {
+		return start, false, false
+	}
+	if text[start] != '{' && text[start] != '[' {
+		return 0, false, false
+	}
+	depth := 0
+	quote := byte(0)
+	escaped := false
+	for i := start; i < len(text); i++ {
+		ch := text[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			quote = ch
+			continue
+		}
+		if ch == '{' || ch == '[' {
+			depth++
+			continue
+		}
+		if ch == '}' || ch == ']' {
+			depth--
+			if depth == 0 {
+				return i + 1, true, true
+			}
+		}
+	}
+	return len(text), false, true
+}
+
+func findObjectFieldValueStart(text string, objStart int, keys []string) (int, bool) {
+	if objStart < 0 || objStart >= len(text) || text[objStart] != '{' {
+		return 0, false
+	}
+	depth := 0
+	quote := byte(0)
+	escaped := false
+	for i := objStart; i < len(text); i++ {
+		ch := text[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			if depth == 1 {
+				key, end, ok := parseJSONStringLiteral(text, i)
+				if !ok {
+					return 0, false
+				}
+				j := skipSpaces(text, end)
+				if j >= len(text) || text[j] != ':' {
+					i = end - 1
+					continue
+				}
+				j = skipSpaces(text, j+1)
+				if j >= len(text) {
+					return 0, false
+				}
+				if containsKey(keys, key) {
+					return j, true
+				}
+				i = j - 1
+				continue
+			}
+			quote = ch
+			continue
+		}
+		if ch == '{' {
+			depth++
+			continue
+		}
+		if ch == '}' {
+			depth--
+			if depth == 0 {
+				break
+			}
+		}
+	}
+	return 0, false
+}
+
+func findFunctionObjectStart(text string, callStart int) (int, bool) {
+	valueStart, ok := findObjectFieldValueStart(text, callStart, []string{"function"})
+	if !ok || valueStart >= len(text) || text[valueStart] != '{' {
+		return -1, false
+	}
+	return valueStart, true
+}
+
+func parseJSONStringLiteral(text string, start int) (string, int, bool) {
+	if start < 0 || start >= len(text) || text[start] != '"' {
+		return "", 0, false
+	}
+	var b strings.Builder
+	escaped := false
+	for i := start + 1; i < len(text); i++ {
+		ch := text[i]
+		if escaped {
+			b.WriteByte(ch)
+			escaped = false
+			continue
+		}
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+		if ch == '"' {
+			return b.String(), i + 1, true
+		}
+		b.WriteByte(ch)
+	}
+	return "", 0, false
+}
+
+func containsKey(keys []string, value string) bool {
+	for _, k := range keys {
+		if k == value {
+			return true
+		}
+	}
+	return false
+}
+
+func skipSpaces(text string, i int) int {
+	for i < len(text) {
+		switch text[i] {
+		case ' ', '\t', '\n', '\r':
+			i++
+		default:
+			return i
+		}
+	}
+	return i
 }

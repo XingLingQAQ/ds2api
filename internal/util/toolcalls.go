@@ -33,6 +33,36 @@ func ParseToolCalls(text string, availableToolNames []string) []ParsedToolCall {
 		return nil
 	}
 
+	return filterToolCalls(parsed, availableToolNames)
+}
+
+func ParseStandaloneToolCalls(text string, availableToolNames []string) []ParsedToolCall {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+	candidates := []string{trimmed}
+	if strings.HasPrefix(trimmed, "```") && strings.HasSuffix(trimmed, "```") {
+		if m := fencedJSONPattern.FindStringSubmatch(trimmed); len(m) >= 2 {
+			candidates = append(candidates, strings.TrimSpace(m[1]))
+		}
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if !strings.HasPrefix(candidate, "{") && !strings.HasPrefix(candidate, "[") {
+			continue
+		}
+		if parsed := parseToolCallsPayload(candidate); len(parsed) > 0 {
+			return filterToolCalls(parsed, availableToolNames)
+		}
+	}
+	return nil
+}
+
+func filterToolCalls(parsed []ParsedToolCall, availableToolNames []string) []ParsedToolCall {
 	allowed := map[string]struct{}{}
 	for _, name := range availableToolNames {
 		allowed[name] = struct{}{}

@@ -1,11 +1,13 @@
 'use strict';
 
+const crypto = require('crypto');
+
 const {
   extractToolNames,
   createToolSieveState,
   processToolSieveChunk,
   flushToolSieve,
-  parseToolCalls,
+  parseStandaloneToolCalls,
   formatOpenAIStreamToolCalls,
 } = require('./helpers/stream-tool-sieve');
 
@@ -90,16 +92,49 @@ module.exports = async function handler(req, res) {
     return;
   }
   const releaseLease = createLeaseReleaser(req, leaseID);
+  const upstreamController = new AbortController();
+  let clientClosed = false;
+  let reader = null;
+  const markClientClosed = () => {
+    if (clientClosed) {
+      return;
+    }
+    clientClosed = true;
+    upstreamController.abort();
+    if (reader && typeof reader.cancel === 'function') {
+      Promise.resolve(reader.cancel()).catch(() => {});
+    }
+  };
+  const onReqAborted = () => markClientClosed();
+  const onResClose = () => {
+    if (!res.writableEnded) {
+      markClientClosed();
+    }
+  };
+  req.on('aborted', onReqAborted);
+  res.on('close', onResClose);
   try {
-    const completionRes = await fetch(DEEPSEEK_COMPLETION_URL, {
-      method: 'POST',
-      headers: {
-        ...BASE_HEADERS,
-        authorization: `Bearer ${deepseekToken}`,
-        'x-ds-pow-response': powHeader,
-      },
-      body: JSON.stringify(completionPayload),
-    });
+    let completionRes;
+    try {
+      completionRes = await fetch(DEEPSEEK_COMPLETION_URL, {
+        method: 'POST',
+        headers: {
+          ...BASE_HEADERS,
+          authorization: `Bearer ${deepseekToken}`,
+          'x-ds-pow-response': powHeader,
+        },
+        body: JSON.stringify(completionPayload),
+        signal: upstreamController.signal,
+      });
+    } catch (err) {
+      if (clientClosed || isAbortError(err)) {
+        return;
+      }
+      throw err;
+    }
+    if (clientClosed) {
+      return;
+    }
 
     if (!completionRes.ok || !completionRes.body) {
       const detail = await safeReadText(completionRes);
@@ -124,12 +159,16 @@ module.exports = async function handler(req, res) {
     const toolSieveEnabled = toolNames.length > 0;
     const toolSieveState = createToolSieveState();
     let toolCallsEmitted = false;
+    const streamToolCallIDs = new Map();
     const decoder = new TextDecoder();
-    const reader = completionRes.body.getReader();
+    reader = completionRes.body.getReader();
     let buffered = '';
     let ended = false;
 
     const sendFrame = (obj) => {
+      if (clientClosed || res.writableEnded || res.destroyed) {
+        return;
+      }
       res.write(`data: ${JSON.stringify(obj)}\n\n`);
       if (typeof res.flush === 'function') {
         res.flush();
@@ -156,7 +195,11 @@ module.exports = async function handler(req, res) {
         return;
       }
       ended = true;
-      const detected = parseToolCalls(outputText, toolNames);
+      if (clientClosed || res.writableEnded || res.destroyed) {
+        await releaseLease();
+        return;
+      }
+      const detected = parseStandaloneToolCalls(outputText, toolNames);
       if (detected.length > 0 && !toolCallsEmitted) {
         toolCallsEmitted = true;
         sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(detected) });
@@ -179,14 +222,22 @@ module.exports = async function handler(req, res) {
         choices: [{ delta: {}, index: 0, finish_reason: reason }],
         usage: buildUsage(finalPrompt, thinkingText, outputText),
       });
-      res.write('data: [DONE]\n\n');
+      if (!res.writableEnded && !res.destroyed) {
+        res.write('data: [DONE]\n\n');
+      }
       await releaseLease();
-      res.end();
+      if (!res.writableEnded && !res.destroyed) {
+        res.end();
+      }
     };
 
     try {
       // eslint-disable-next-line no-constant-condition
       while (true) {
+        if (clientClosed) {
+          await finish('stop');
+          return;
+        }
         const { value, done } = await reader.read();
         if (done) {
           break;
@@ -245,6 +296,11 @@ module.exports = async function handler(req, res) {
               }
               const events = processToolSieveChunk(toolSieveState, p.text, toolNames);
               for (const evt of events) {
+                if (evt.type === 'tool_call_deltas' && Array.isArray(evt.deltas) && evt.deltas.length > 0) {
+                  toolCallsEmitted = true;
+                  sendDeltaFrame({ tool_calls: formatIncrementalToolCallDeltas(evt.deltas, streamToolCallIDs) });
+                  continue;
+                }
                 if (evt.type === 'tool_calls') {
                   toolCallsEmitted = true;
                   sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(evt.calls) });
@@ -259,10 +315,16 @@ module.exports = async function handler(req, res) {
         }
       }
       await finish('stop');
-    } catch (_err) {
+    } catch (err) {
+      if (clientClosed || isAbortError(err)) {
+        await finish('stop');
+        return;
+      }
       await finish('stop');
     }
   } finally {
+    req.removeListener('aborted', onReqAborted);
+    res.removeListener('close', onResClose);
     await releaseLease();
   }
 };
@@ -656,6 +718,55 @@ function buildUsage(prompt, thinking, output) {
   };
 }
 
+function formatIncrementalToolCallDeltas(deltas, idStore) {
+  if (!Array.isArray(deltas) || deltas.length === 0) {
+    return [];
+  }
+  const out = [];
+  for (const d of deltas) {
+    if (!d || typeof d !== 'object') {
+      continue;
+    }
+    const index = Number.isInteger(d.index) ? d.index : 0;
+    const id = ensureStreamToolCallID(idStore, index);
+    const item = {
+      index,
+      id,
+      type: 'function',
+    };
+    const fn = {};
+    if (asString(d.name)) {
+      fn.name = asString(d.name);
+    }
+    if (typeof d.arguments === 'string' && d.arguments !== '') {
+      fn.arguments = d.arguments;
+    }
+    if (Object.keys(fn).length > 0) {
+      item.function = fn;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+function ensureStreamToolCallID(idStore, index) {
+  const key = Number.isInteger(index) ? index : 0;
+  const existing = idStore.get(key);
+  if (existing) {
+    return existing;
+  }
+  const next = `call_${newCallID()}`;
+  idStore.set(key, next);
+  return next;
+}
+
+function newCallID() {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '');
+  }
+  return `${Date.now()}${Math.floor(Math.random() * 1e9)}`;
+}
+
 function estimateTokens(text) {
   const t = asString(text);
   if (!t) {
@@ -667,44 +778,92 @@ function estimateTokens(text) {
 
 async function proxyToGo(req, res, rawBody) {
   const url = buildInternalGoURL(req);
-
-  const upstream = await fetch(url.toString(), {
-    method: 'POST',
-    headers: buildInternalGoHeaders(req, { withContentType: true }),
-    body: rawBody,
-  });
-
-  res.statusCode = upstream.status;
-  upstream.headers.forEach((value, key) => {
-    if (key.toLowerCase() === 'content-length') {
+  const controller = new AbortController();
+  let clientClosed = false;
+  const markClientClosed = () => {
+    if (clientClosed) {
       return;
     }
-    res.setHeader(key, value);
-  });
+    clientClosed = true;
+    controller.abort();
+  };
+  const onReqAborted = () => markClientClosed();
+  const onResClose = () => {
+    if (!res.writableEnded) {
+      markClientClosed();
+    }
+  };
+  req.on('aborted', onReqAborted);
+  res.on('close', onResClose);
 
-  if (!upstream.body || typeof upstream.body.getReader !== 'function') {
-    const bytes = Buffer.from(await upstream.arrayBuffer());
-    res.end(bytes);
-    return;
-  }
-
-  const reader = upstream.body.getReader();
   try {
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
+    let upstream;
+    try {
+      upstream = await fetch(url.toString(), {
+        method: 'POST',
+        headers: buildInternalGoHeaders(req, { withContentType: true }),
+        body: rawBody,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (clientClosed || isAbortError(err)) {
+        if (!res.writableEnded) {
+          res.end();
+        }
+        return;
       }
-      if (value && value.length > 0) {
-        res.write(Buffer.from(value));
-        if (typeof res.flush === 'function') {
-          res.flush();
+      throw err;
+    }
+    if (clientClosed) {
+      if (!res.writableEnded) {
+        res.end();
+      }
+      return;
+    }
+
+    res.statusCode = upstream.status;
+    upstream.headers.forEach((value, key) => {
+      if (key.toLowerCase() === 'content-length') {
+        return;
+      }
+      res.setHeader(key, value);
+    });
+
+    if (!upstream.body || typeof upstream.body.getReader !== 'function') {
+      const bytes = Buffer.from(await upstream.arrayBuffer());
+      res.end(bytes);
+      return;
+    }
+
+    const reader = upstream.body.getReader();
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (clientClosed) {
+          break;
+        }
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value && value.length > 0) {
+          res.write(Buffer.from(value));
+          if (typeof res.flush === 'function') {
+            res.flush();
+          }
         }
       }
+      if (!res.writableEnded) {
+        res.end();
+      }
+    } catch (err) {
+      if (!isAbortError(err) && !res.writableEnded) {
+        res.end();
+      }
     }
-    res.end();
-  } catch (_err) {
+  } finally {
+    req.removeListener('aborted', onReqAborted);
+    res.removeListener('close', onResClose);
     if (!res.writableEnded) {
       res.end();
     }
@@ -760,6 +919,13 @@ function asString(v) {
     return '';
   }
   return String(v).trim();
+}
+
+function isAbortError(err) {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  return err.name === 'AbortError' || err.code === 'ABORT_ERR';
 }
 
 module.exports.__test = {
