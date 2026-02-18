@@ -4,8 +4,13 @@
  *
  * 使用方法:
  *   node start.mjs          # 显示交互式菜单
- *   node start.mjs dev      # 开发模式（后端+前端）
- *   node start.mjs prod     # 生产模式
+ *   node start.mjs dev      # 开发模式（后端 + 前端热重载）
+ *   node start.mjs prod     # 生产模式（编译后运行）
+ *   node start.mjs build    # 编译后端二进制
+ *   node start.mjs webui    # 构建前端静态文件
+ *   node start.mjs install  # 安装前端依赖
+ *   node start.mjs stop     # 停止所有服务
+ *   node start.mjs status   # 查看服务状态
  */
 
 import { spawn, execSync } from 'child_process';
@@ -20,25 +25,17 @@ const __dirname = dirname(__filename);
 // 判断是否为 Windows
 const isWindows = process.platform === 'win32';
 
-// 配置
-const CONFIG = {
-  backendPort: process.env.PORT || 5001,
-  frontendPort: 5173,
-  host: process.env.HOST || '0.0.0.0',
-  logLevel: process.env.LOG_LEVEL || 'info',
-  adminKey: process.env.DS2API_ADMIN_KEY || 'ds2api',
-  webuiDir: join(__dirname, 'webui'),
-  venvDir: join(__dirname, '.venv'),
-};
+// 编译产物路径
+const BINARY = join(__dirname, isWindows ? 'ds2api.exe' : 'ds2api');
 
-// venv 中的可执行文件路径
-const VENV = {
-  python: isWindows
-    ? join(CONFIG.venvDir, 'Scripts', 'python.exe')
-    : join(CONFIG.venvDir, 'bin', 'python'),
-  pip: isWindows
-    ? join(CONFIG.venvDir, 'Scripts', 'pip.exe')
-    : join(CONFIG.venvDir, 'bin', 'pip'),
+// 配置（从环境变量读取，与 Go 主程序保持一致）
+const CONFIG = {
+  port: process.env.PORT || '5001',
+  frontendPort: 5173,
+  logLevel: process.env.LOG_LEVEL || 'INFO',
+  adminKey: process.env.DS2API_ADMIN_KEY || 'admin',
+  webuiDir: join(__dirname, 'webui'),
+  staticAdminDir: process.env.DS2API_STATIC_ADMIN_DIR || join(__dirname, 'static', 'admin'),
 };
 
 // 存储子进程
@@ -78,7 +75,6 @@ function cleanup() {
   process.exit(0);
 }
 
-// 注册退出处理
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
@@ -92,39 +88,17 @@ function commandExists(cmd) {
   }
 }
 
-// 获取系统 Python 命令
-function getSystemPython() {
-  const candidates = isWindows
-    ? ['python', 'python3', 'py']
-    : ['python3', 'python'];
-
-  for (const cmd of candidates) {
-    if (commandExists(cmd)) {
-      return cmd;
-    }
-  }
-  return null;
+// 检查 Go 是否安装
+function checkGo() {
+  return commandExists('go');
 }
 
-// 系统 Python 命令
-const SYSTEM_PYTHON = getSystemPython();
-
-// 检查 venv 是否存在
-function venvExists() {
-  return existsSync(VENV.python);
-}
-
-// 检查 Python 依赖是否已安装
-function checkPythonDeps() {
-  if (!venvExists()) return false;
+// 获取 Go 版本
+function getGoVersion() {
   try {
-    execSync(`"${VENV.python}" -c "import fastapi, uvicorn"`, {
-      stdio: 'ignore',
-      shell: true,
-    });
-    return true;
+    return execSync('go version', { encoding: 'utf-8' }).trim();
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -134,13 +108,14 @@ function checkFrontendDeps() {
   return existsSync(join(CONFIG.webuiDir, 'node_modules'));
 }
 
-// 获取依赖状态
-function getDepsStatus() {
-  return {
-    venv: venvExists(),
-    python: checkPythonDeps(),
-    frontend: checkFrontendDeps(),
-  };
+// 检查前端是否已构建
+function checkWebuiBuilt() {
+  return existsSync(join(CONFIG.staticAdminDir, 'index.html'));
+}
+
+// 检查后端二进制是否存在
+function binaryExists() {
+  return existsSync(BINARY);
 }
 
 // 查找占用端口的进程 PID
@@ -173,7 +148,7 @@ function findPidByPort(port) {
 
 // 获取运行中的服务状态
 function getRunningStatus() {
-  const backendPids = findPidByPort(CONFIG.backendPort);
+  const backendPids = findPidByPort(CONFIG.port);
   const frontendPids = findPidByPort(CONFIG.frontendPort);
   return {
     backend: backendPids,
@@ -213,65 +188,33 @@ async function stopServices() {
   };
 
   if (running.backend.length > 0) {
-    log.info(`停止后端服务 (端口 ${CONFIG.backendPort}, PID: ${running.backend.join(', ')})...`);
-    for (const pid of running.backend) {
-      await killProcess(pid);
-    }
+    log.info(`停止后端服务 (端口 ${CONFIG.port}, PID: ${running.backend.join(', ')})...`);
+    for (const pid of running.backend) await killProcess(pid);
     log.success('后端服务已停止');
   }
 
   if (running.frontend.length > 0) {
     log.info(`停止前端服务 (端口 ${CONFIG.frontendPort}, PID: ${running.frontend.join(', ')})...`);
-    for (const pid of running.frontend) {
-      await killProcess(pid);
-    }
+    for (const pid of running.frontend) await killProcess(pid);
     log.success('前端服务已停止');
   }
 }
 
-// 创建 venv
-async function createVenv() {
-  if (venvExists()) {
-    log.info('虚拟环境已存在');
-    return true;
+// 安装前端依赖
+async function installFrontendDeps() {
+  if (!existsSync(CONFIG.webuiDir)) {
+    log.warn('webui 目录不存在，跳过前端依赖安装');
+    return;
   }
-
-  if (!SYSTEM_PYTHON) {
-    throw new Error('未找到 Python，请先安装 Python');
-  }
-
-  log.info('创建 Python 虚拟环境...');
+  log.info('安装前端依赖 (npm ci)...');
   return new Promise((resolve, reject) => {
-    const proc = spawn(SYSTEM_PYTHON, ['-m', 'venv', CONFIG.venvDir], {
-      cwd: __dirname,
+    const proc = spawn('npm', ['ci'], {
+      cwd: CONFIG.webuiDir,
       stdio: 'inherit',
       shell: true,
     });
-    proc.on('close', code => {
-      if (code === 0) {
-        log.success('虚拟环境创建成功');
-        resolve(true);
-      } else {
-        reject(new Error('虚拟环境创建失败'));
-      }
-    });
+    proc.on('close', code => code === 0 ? resolve() : reject(new Error('前端依赖安装失败')));
   });
-}
-
-// 确保 venv 存在
-async function ensureVenv() {
-  if (!venvExists()) {
-    await createVenv();
-  }
-}
-
-// 确保 Python 依赖已安装
-async function ensurePythonDeps() {
-  await ensureVenv();
-  if (!checkPythonDeps()) {
-    log.warn('检测到 Python 依赖未安装，正在安装...');
-    await installPythonDeps();
-  }
 }
 
 // 确保前端依赖已安装
@@ -282,140 +225,113 @@ async function ensureFrontendDeps() {
   }
 }
 
-// 安装 Python 依赖
-async function installPythonDeps() {
-  await ensureVenv();
-  log.info('安装 Python 依赖...');
+// 编译后端二进制
+async function buildBackend() {
+  if (!checkGo()) throw new Error('未找到 Go，请先安装 Go (https://go.dev/dl/)');
+  log.info('编译后端二进制...');
   return new Promise((resolve, reject) => {
-    const proc = spawn(VENV.pip, ['install', '-r', 'requirements.txt'], {
+    const proc = spawn('go', ['build', '-o', BINARY, './cmd/ds2api'], {
       cwd: __dirname,
       stdio: 'inherit',
       shell: true,
     });
-    proc.on('close', code => code === 0 ? resolve() : reject(new Error('Python 依赖安装失败')));
+    proc.on('close', code => code === 0 ? resolve() : reject(new Error('后端编译失败')));
   });
 }
 
-// 安装前端依赖
-async function installFrontendDeps() {
+// 构建前端静态文件
+async function buildWebui() {
   if (!existsSync(CONFIG.webuiDir)) {
-    log.warn('webui 目录不存在，跳过前端依赖安装');
+    log.warn('webui 目录不存在');
     return;
   }
-  log.info('安装前端依赖...');
+  await ensureFrontendDeps();
+  log.info('构建前端静态文件...');
   return new Promise((resolve, reject) => {
-    const proc = spawn('npm', ['install'], {
-      cwd: CONFIG.webuiDir,
-      stdio: 'inherit',
-      shell: true,
-    });
-    proc.on('close', code => code === 0 ? resolve() : reject(new Error('前端依赖安装失败')));
+    const proc = spawn(
+      'npm', ['run', 'build', '--', '--outDir', CONFIG.staticAdminDir, '--emptyOutDir'],
+      { cwd: CONFIG.webuiDir, stdio: 'inherit', shell: true }
+    );
+    proc.on('close', code => code === 0 ? resolve() : reject(new Error('前端构建失败')));
   });
 }
 
-// 安装所有依赖
-async function installAll() {
-  log.title('========== 安装依赖 ==========');
-  try {
-    await installPythonDeps();
-    log.success('Python 依赖安装完成');
-    await installFrontendDeps();
-    log.success('前端依赖安装完成');
-    log.success('所有依赖安装完成！');
-  } catch (e) {
-    log.error(e.message);
-  }
-}
-
-// 启动后端
-async function startBackend(devMode = true) {
-  await ensurePythonDeps();
-
-  log.info(`启动后端服务... http://localhost:${CONFIG.backendPort}`);
-
-  const args = [
-    '-m', 'uvicorn',
-    'app:app',
-    '--host', CONFIG.host,
-    '--port', String(CONFIG.backendPort),
-    '--log-level', CONFIG.logLevel,
-  ];
-
-  if (devMode) {
-    args.push('--reload', '--reload-dir', __dirname);
-  }
-
-  const proc = spawn(VENV.python, args, {
+// 启动后端（开发模式：go run，无需预编译）
+async function startBackendDev() {
+  if (!checkGo()) throw new Error('未找到 Go，请先安装 Go (https://go.dev/dl/)');
+  log.info(`启动后端（go run）... http://localhost:${CONFIG.port}`);
+  const proc = spawn('go', ['run', './cmd/ds2api'], {
     cwd: __dirname,
     stdio: 'inherit',
     shell: true,
     env: {
       ...process.env,
+      PORT: CONFIG.port,
+      LOG_LEVEL: CONFIG.logLevel,
       DS2API_ADMIN_KEY: CONFIG.adminKey,
     },
   });
-
   processes.push(proc);
   return proc;
 }
 
-// 启动前端
+// 启动后端（生产模式：运行编译好的二进制）
+async function startBackendProd() {
+  if (!binaryExists()) {
+    log.warn('未找到编译产物，正在编译...');
+    await buildBackend();
+  }
+  log.info(`启动后端（二进制）... http://localhost:${CONFIG.port}`);
+  const proc = spawn(BINARY, [], {
+    cwd: __dirname,
+    stdio: 'inherit',
+    shell: false,
+    env: {
+      ...process.env,
+      PORT: CONFIG.port,
+      LOG_LEVEL: CONFIG.logLevel,
+      DS2API_ADMIN_KEY: CONFIG.adminKey,
+    },
+  });
+  processes.push(proc);
+  return proc;
+}
+
+// 启动前端开发服务器
 async function startFrontend() {
   if (!existsSync(CONFIG.webuiDir)) {
     log.warn('webui 目录不存在，跳过前端启动');
     return null;
   }
-
   await ensureFrontendDeps();
-
-  log.info(`启动前端服务... http://localhost:${CONFIG.frontendPort}`);
-
+  log.info(`启动前端开发服务器... http://localhost:${CONFIG.frontendPort}`);
   const proc = spawn('npm', ['run', 'dev'], {
     cwd: CONFIG.webuiDir,
     stdio: 'inherit',
     shell: true,
   });
-
   processes.push(proc);
   return proc;
-}
-
-// 构建前端
-async function buildFrontend() {
-  if (!existsSync(CONFIG.webuiDir)) {
-    log.warn('webui 目录不存在');
-    return;
-  }
-
-  log.info('构建前端...');
-  return new Promise((resolve, reject) => {
-    const proc = spawn('npm', ['run', 'build'], {
-      cwd: CONFIG.webuiDir,
-      stdio: 'inherit',
-      shell: true,
-    });
-    proc.on('close', code => code === 0 ? resolve() : reject(new Error('前端构建失败')));
-  });
 }
 
 // 显示状态信息
 function showStatus() {
   console.log('\n' + '─'.repeat(50));
-  log.success(`后端 API:  http://localhost:${CONFIG.backendPort}`);
+  log.success(`后端 API:  http://localhost:${CONFIG.port}`);
+  log.success(`管理界面: http://localhost:${CONFIG.port}/admin`);
   if (existsSync(CONFIG.webuiDir)) {
-    log.success(`管理界面: http://localhost:${CONFIG.frontendPort}`);
+    log.success(`前端 Dev:  http://localhost:${CONFIG.frontendPort}`);
   }
   console.log('─'.repeat(50));
   log.info('按 Ctrl+C 停止所有服务\n');
 }
 
-// 等待进程
+// 等待进程退出
 function waitForProcesses() {
   return new Promise(resolve => {
-    const checkInterval = setInterval(() => {
-      const alive = processes.filter(p => !p.killed);
-      if (alive.length === 0) {
-        clearInterval(checkInterval);
+    const check = setInterval(() => {
+      if (processes.filter(p => !p.killed).length === 0) {
+        clearInterval(check);
         resolve();
       }
     }, 1000);
@@ -424,53 +340,50 @@ function waitForProcesses() {
 
 // 交互式菜单
 async function showMenu() {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
   const question = (prompt) => new Promise(resolve => rl.question(prompt, resolve));
 
   console.clear();
   log.title('╔══════════════════════════════════════════╗');
-  log.title('║         DS2API 启动脚本                  ║');
+  log.title('║         DS2API 启动脚本  (Go)            ║');
   log.title('╚══════════════════════════════════════════╝');
 
-  // 获取依赖状态
-  const deps = getDepsStatus();
+  // 环境状态
+  const goVersion = getGoVersion();
+  const frontendDeps = checkFrontendDeps();
+  const webuiBuilt = checkWebuiBuilt();
+  const hasBinary = binaryExists();
   const running = getRunningStatus();
 
-  const statusText = (ok) => ok ? `${colors.green}已安装${colors.reset}` : `${colors.yellow}未安装${colors.reset}`;
+  const ok = (v) => v ? `${colors.green}✓${colors.reset}` : `${colors.yellow}✗${colors.reset}`;
 
   console.log(`\n${colors.bright}环境状态:${colors.reset}`);
-  console.log(`  Python:     ${SYSTEM_PYTHON || `${colors.red}未找到${colors.reset}`}`);
-  console.log(`  虚拟环境:   ${deps.venv ? `${colors.green}已创建${colors.reset}` : `${colors.yellow}未创建${colors.reset}`} (${CONFIG.venvDir})`);
-  console.log(`  后端依赖:   ${statusText(deps.python)}`);
-  if (deps.frontend !== null) {
-    console.log(`  前端依赖:   ${statusText(deps.frontend)}`);
-  }
+  console.log(`  Go:          ${goVersion ? `${colors.green}${goVersion}${colors.reset}` : `${colors.red}未安装${colors.reset}`}`);
+  console.log(`  前端依赖:    ${frontendDeps === null ? `${colors.dim}N/A${colors.reset}` : frontendDeps ? `${colors.green}已安装${colors.reset}` : `${colors.yellow}未安装${colors.reset}`}`);
+  console.log(`  前端构建:    ${ok(webuiBuilt)} ${webuiBuilt ? `(${CONFIG.staticAdminDir})` : '未构建'}`);
+  console.log(`  后端二进制:  ${ok(hasBinary)} ${hasBinary ? BINARY : '未编译'}`);
 
   console.log(`\n${colors.bright}服务状态:${colors.reset}`);
-  console.log(`  后端 (${CONFIG.backendPort}): ${running.backend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${running.backend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
-  console.log(`  前端 (${CONFIG.frontendPort}): ${running.frontend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${running.frontend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
+  console.log(`  后端 (:${CONFIG.port}):    ${running.backend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${running.backend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
+  console.log(`  前端 (:${CONFIG.frontendPort}): ${running.frontend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${running.frontend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
 
   console.log(`\n${colors.bright}环境变量:${colors.reset}`);
-  console.log(`  DS2API_ADMIN_KEY: ${colors.cyan}${CONFIG.adminKey}${colors.reset}`);
-  console.log(`  PORT:             ${colors.cyan}${CONFIG.backendPort}${colors.reset}`);
-  console.log(`  HOST:             ${colors.cyan}${CONFIG.host}${colors.reset}`);
-  console.log(`  LOG_LEVEL:        ${colors.cyan}${CONFIG.logLevel}${colors.reset}`);
-  console.log(`${colors.dim}  自定义: DS2API_ADMIN_KEY=你的密钥 node start.mjs${colors.reset}`);
+  console.log(`  PORT:              ${colors.cyan}${CONFIG.port}${colors.reset}`);
+  console.log(`  LOG_LEVEL:         ${colors.cyan}${CONFIG.logLevel}${colors.reset}`);
+  console.log(`  DS2API_ADMIN_KEY:  ${colors.cyan}${CONFIG.adminKey}${colors.reset}`);
+  console.log(`${colors.dim}  自定义: DS2API_ADMIN_KEY=密钥 PORT=5001 node start.mjs${colors.reset}`);
 
   console.log(`
 ${colors.bright}请选择操作:${colors.reset}
 
-  ${colors.cyan}1.${colors.reset} 开发模式 (后端 + 前端热重载)
-  ${colors.cyan}2.${colors.reset} 仅启动后端 (开发模式)
-  ${colors.cyan}3.${colors.reset} 仅启动前端
-  ${colors.cyan}4.${colors.reset} 生产模式 (仅后端，无热重载)
-  ${colors.cyan}5.${colors.reset} 构建前端
-  ${colors.cyan}6.${colors.reset} 安装依赖 (创建venv + 安装包)
-  ${colors.red}7.${colors.reset} 停止所有服务
+  ${colors.cyan}1.${colors.reset} 开发模式  (go run + 前端热重载)
+  ${colors.cyan}2.${colors.reset} 仅后端    (go run，无需编译)
+  ${colors.cyan}3.${colors.reset} 仅前端    (npm dev)
+  ${colors.cyan}4.${colors.reset} 生产模式  (编译后运行，前端已嵌入)
+  ${colors.cyan}5.${colors.reset} 编译后端  (go build)
+  ${colors.cyan}6.${colors.reset} 构建前端  (npm build → static/admin)
+  ${colors.cyan}7.${colors.reset} 安装前端依赖 (npm ci)
+  ${colors.red}8.${colors.reset} 停止所有服务
   ${colors.cyan}0.${colors.reset} 退出
 `);
 
@@ -480,7 +393,7 @@ ${colors.bright}请选择操作:${colors.reset}
   switch (choice.trim() || '1') {
     case '1':
       log.title('========== 开发模式 ==========');
-      await startBackend(true);
+      await startBackendDev();
       await new Promise(r => setTimeout(r, 1500));
       await startFrontend();
       showStatus();
@@ -488,8 +401,8 @@ ${colors.bright}请选择操作:${colors.reset}
       break;
 
     case '2':
-      log.title('========== 仅后端 (开发模式) ==========');
-      await startBackend(true);
+      log.title('========== 仅后端 (go run) ==========');
+      await startBackendDev();
       showStatus();
       await waitForProcesses();
       break;
@@ -503,21 +416,30 @@ ${colors.bright}请选择操作:${colors.reset}
 
     case '4':
       log.title('========== 生产模式 ==========');
-      await startBackend(false);
+      await startBackendProd();
       showStatus();
       await waitForProcesses();
       break;
 
     case '5':
-      await buildFrontend();
-      log.success('前端构建完成！');
+      log.title('========== 编译后端 ==========');
+      await buildBackend();
+      log.success(`编译完成：${BINARY}`);
       break;
 
     case '6':
-      await installAll();
+      log.title('========== 构建前端 ==========');
+      await buildWebui();
+      log.success('前端构建完成！');
       break;
 
     case '7':
+      log.title('========== 安装前端依赖 ==========');
+      await installFrontendDeps();
+      log.success('前端依赖安装完成！');
+      break;
+
+    case '8':
       await stopServices();
       break;
 
@@ -534,19 +456,21 @@ ${colors.bright}请选择操作:${colors.reset}
 
 // 命令行参数处理
 async function main() {
-  const args = process.argv.slice(2);
-  const cmd = args[0];
+  const cmd = process.argv[2];
 
-  // 检查必要工具
-  if (!SYSTEM_PYTHON) {
-    log.error('未找到 Python，请先安装 Python (尝试了 python, python3, py)');
-    process.exit(1);
+  if (!checkGo() && !['install', 'webui', 'stop', 'status', 'help', '-h', '--help'].includes(cmd)) {
+    log.error('未找到 Go，请先安装 Go: https://go.dev/dl/');
+    if (!cmd) {
+      // 无 Go 时仍允许进入菜单（可以只操作前端）
+    } else {
+      process.exit(1);
+    }
   }
 
   switch (cmd) {
     case 'dev':
       log.title('========== 开发模式 ==========');
-      await startBackend(true);
+      await startBackendDev();
       await new Promise(r => setTimeout(r, 1500));
       await startFrontend();
       showStatus();
@@ -555,54 +479,65 @@ async function main() {
 
     case 'prod':
       log.title('========== 生产模式 ==========');
-      await startBackend(false);
+      await startBackendProd();
       showStatus();
       await waitForProcesses();
       break;
 
     case 'build':
-      await buildFrontend();
+      await buildBackend();
+      log.success(`编译完成：${BINARY}`);
+      break;
+
+    case 'webui':
+      await buildWebui();
       log.success('前端构建完成！');
       break;
 
     case 'install':
-      await installAll();
+      await installFrontendDeps();
+      log.success('前端依赖安装完成！');
       break;
 
     case 'stop':
       await stopServices();
       break;
 
-    case 'status':
+    case 'status': {
       const status = getRunningStatus();
+      const goVer = getGoVersion();
+      console.log(`\n${colors.bright}环境:${colors.reset}`);
+      console.log(`  Go: ${goVer || `${colors.red}未安装${colors.reset}`}`);
       console.log(`\n${colors.bright}服务状态:${colors.reset}`);
-      console.log(`  后端 (${CONFIG.backendPort}): ${status.backend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${status.backend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
-      console.log(`  前端 (${CONFIG.frontendPort}): ${status.frontend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${status.frontend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}\n`);
+      console.log(`  后端 (:${CONFIG.port}):    ${status.backend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${status.backend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}`);
+      console.log(`  前端 (:${CONFIG.frontendPort}): ${status.frontend.length > 0 ? `${colors.green}运行中${colors.reset} (PID: ${status.frontend.join(', ')})` : `${colors.dim}未运行${colors.reset}`}\n`);
       break;
+    }
 
     case 'help':
     case '-h':
     case '--help':
       console.log(`
-${colors.bright}DS2API 启动脚本${colors.reset}
+${colors.bright}DS2API 启动脚本 (Go)${colors.reset}
 
 ${colors.cyan}使用方法:${colors.reset}
   node start.mjs              显示交互式菜单
-  node start.mjs dev          开发模式 (后端 + 前端)
-  node start.mjs prod         生产模式 (无热重载)
-  node start.mjs build        构建前端
-  node start.mjs install      安装所有依赖 (自动创建venv)
+  node start.mjs dev          开发模式 (go run + 前端热重载)
+  node start.mjs prod         生产模式 (编译产物，前端已嵌入)
+  node start.mjs build        编译后端二进制 (go build)
+  node start.mjs webui        构建前端静态文件
+  node start.mjs install      安装前端依赖 (npm ci)
   node start.mjs stop         停止所有服务
   node start.mjs status       查看服务状态
 
-${colors.cyan}环境变量:${colors.reset}
-  PORT        后端端口 (默认: 5001)
-  HOST        监听地址 (默认: 0.0.0.0)
-  LOG_LEVEL   日志级别 (默认: info)
+${colors.cyan}常用环境变量:${colors.reset}
+  PORT               后端端口 (默认: 5001)
+  LOG_LEVEL          日志级别: DEBUG|INFO|WARN|ERROR (默认: INFO)
+  DS2API_ADMIN_KEY   管理员密钥 (默认: admin)
+  DS2API_CONFIG_PATH 配置文件路径 (默认: config.json)
 
-${colors.cyan}虚拟环境:${colors.reset}
-  默认路径: .venv/
-  首次运行 install 时自动创建
+${colors.cyan}示例:${colors.reset}
+  DS2API_ADMIN_KEY=mykey PORT=8080 node start.mjs dev
 `);
       break;
 
