@@ -38,18 +38,19 @@ func TestNormalizeOpenAIMessagesForPrompt_AssistantToolCallsAndToolResult(t *tes
 		t.Fatalf("expected 4 normalized messages, got %d", len(normalized))
 	}
 	assistantContent, _ := normalized[2]["content"].(string)
-	if !strings.Contains(assistantContent, "tool_call_id: call_1") ||
+	if !strings.Contains(assistantContent, "[TOOL_CALL_HISTORY]") ||
+		!strings.Contains(assistantContent, "tool_call_id: call_1") ||
 		!strings.Contains(assistantContent, "function.name: get_weather") ||
 		!strings.Contains(assistantContent, "function.arguments: {\"city\":\"beijing\"}") {
 		t.Fatalf("assistant tool call not serialized correctly: %q", assistantContent)
 	}
 	toolContent, _ := normalized[3]["content"].(string)
-	if !strings.Contains(toolContent, "Tool result:") || !strings.Contains(toolContent, "name: get_weather") {
+	if !strings.Contains(toolContent, "[TOOL_RESULT_HISTORY]") || !strings.Contains(toolContent, "name: get_weather") {
 		t.Fatalf("tool result not serialized correctly: %q", toolContent)
 	}
 
 	prompt := util.MessagesPrepare(normalized)
-	if !strings.Contains(prompt, "tool_call_id: call_1") || !strings.Contains(prompt, "Tool result:") {
+	if !strings.Contains(prompt, "tool_call_id: call_1") || !strings.Contains(prompt, "[TOOL_RESULT_HISTORY]") {
 		t.Fatalf("expected prompt to include tool call + result semantics: %q", prompt)
 	}
 }

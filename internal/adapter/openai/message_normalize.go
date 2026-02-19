@@ -86,7 +86,7 @@ func formatAssistantToolCallsForPrompt(msg map[string]any) string {
 			if args == "" {
 				args = "{}"
 			}
-			entries = append(entries, fmt.Sprintf("Tool call:\n- tool_call_id: %s\n- function.name: %s\n- function.arguments: %s", id, name, args))
+			entries = append(entries, fmt.Sprintf("[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: %s\nfunction.name: %s\nfunction.arguments: %s\n[/TOOL_CALL_HISTORY]", id, name, args))
 		}
 	}
 
@@ -99,7 +99,7 @@ func formatAssistantToolCallsForPrompt(msg map[string]any) string {
 		if args == "" {
 			args = "{}"
 		}
-		entries = append(entries, fmt.Sprintf("Tool call:\n- tool_call_id: call_legacy\n- function.name: %s\n- function.arguments: %s", name, args))
+		entries = append(entries, fmt.Sprintf("[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: call_legacy\nfunction.name: %s\nfunction.arguments: %s\n[/TOOL_CALL_HISTORY]", name, args))
 	}
 
 	return strings.Join(entries, "\n\n")
@@ -124,7 +124,7 @@ func formatToolResultForPrompt(msg map[string]any) string {
 		content = "null"
 	}
 
-	return fmt.Sprintf("Tool result:\n- tool_call_id: %s\n- name: %s\n- content: %s", toolCallID, name, content)
+	return fmt.Sprintf("[TOOL_RESULT_HISTORY]\nstatus: already_returned\norigin: tool_runtime\nnot_user_input: true\ntool_call_id: %s\nname: %s\ncontent: %s\n[/TOOL_RESULT_HISTORY]", toolCallID, name, content)
 }
 
 func normalizeOpenAIContentForPrompt(v any) string {

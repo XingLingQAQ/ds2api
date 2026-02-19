@@ -46,7 +46,7 @@ func TestBuildOpenAIFinalPrompt_HandlerPathIncludesToolRoundtripSemantics(t *tes
 	}
 	if !strings.Contains(finalPrompt, "tool_call_id: call_1") ||
 		!strings.Contains(finalPrompt, "function.name: get_weather") ||
-		!strings.Contains(finalPrompt, "Tool result:") ||
+		!strings.Contains(finalPrompt, "[TOOL_RESULT_HISTORY]") ||
 		!strings.Contains(finalPrompt, `"condition":"sunny"`) {
 		t.Fatalf("handler finalPrompt missing tool roundtrip semantics: %q", finalPrompt)
 	}
@@ -76,5 +76,8 @@ func TestBuildOpenAIFinalPrompt_VercelPreparePathKeepsFinalAnswerInstruction(t *
 	}
 	if !strings.Contains(finalPrompt, "Only call another tool when the previous result is missing required data or returned an error.") {
 		t.Fatalf("vercel prepare finalPrompt missing retry guard instruction: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "[TOOL_RESULT_HISTORY]") {
+		t.Fatalf("vercel prepare finalPrompt missing history marker instruction: %q", finalPrompt)
 	}
 }
