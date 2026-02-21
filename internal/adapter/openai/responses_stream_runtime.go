@@ -39,6 +39,7 @@ type responsesStreamRuntime struct {
 	streamToolCallIDs map[int]string
 	streamFunctionIDs map[int]string
 	functionDone      map[int]bool
+	toolCallsDoneSigs map[string]bool
 	reasoningItemID   string
 
 	persistResponse func(obj map[string]any)
@@ -73,6 +74,7 @@ func newResponsesStreamRuntime(
 		streamToolCallIDs:   map[int]string{},
 		streamFunctionIDs:   map[int]string{},
 		functionDone:        map[int]bool{},
+		toolCallsDoneSigs:   map[string]bool{},
 		persistResponse:     persistResponse,
 	}
 }
@@ -106,25 +108,8 @@ func (s *responsesStreamRuntime) finalize() {
 		s.sendEvent("response.reasoning_text.done", openaifmt.BuildResponsesReasoningTextDonePayload(s.responseID, s.ensureReasoningItemID(), 0, 0, finalThinking))
 	}
 	if s.bufferToolContent {
-		for _, evt := range flushToolSieve(&s.sieve, s.toolNames) {
-			if evt.Content != "" {
-				s.sendEvent("response.output_text.delta", openaifmt.BuildResponsesTextDeltaPayload(s.responseID, evt.Content))
-			}
-			if len(evt.ToolCalls) > 0 {
-				s.toolCallsEmitted = true
-				s.toolCallsDoneEmitted = true
-				s.sendEvent("response.output_tool_call.done", openaifmt.BuildResponsesToolCallDonePayload(s.responseID, formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.streamToolCallIDs)))
-				s.emitFunctionCallDoneEvents(evt.ToolCalls)
-			}
-		}
-		for _, evt := range flushToolSieve(&s.thinkingSieve, s.toolNames) {
-			if len(evt.ToolCalls) > 0 {
-				s.toolCallsEmitted = true
-				s.toolCallsDoneEmitted = true
-				s.sendEvent("response.output_tool_call.done", openaifmt.BuildResponsesToolCallDonePayload(s.responseID, formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.streamToolCallIDs)))
-				s.emitFunctionCallDoneEvents(evt.ToolCalls)
-			}
-		}
+		s.processToolStreamEvents(flushToolSieve(&s.sieve, s.toolNames), true)
+		s.processToolStreamEvents(flushToolSieve(&s.thinkingSieve, s.toolNames), false)
 	}
 	// Compatibility fallback: some streams only emit incremental tool deltas.
 	// Ensure final function_call_arguments.done is emitted at least once.
@@ -141,9 +126,10 @@ func (s *responsesStreamRuntime) finalize() {
 		}
 		if len(detected) > 0 {
 			if !s.toolCallsDoneEmitted {
-				s.sendEvent("response.output_tool_call.done", openaifmt.BuildResponsesToolCallDonePayload(s.responseID, formatFinalStreamToolCallsWithStableIDs(detected, s.streamToolCallIDs)))
+				s.emitToolCallsDone(detected)
+			} else {
+				s.emitFunctionCallDoneEvents(detected)
 			}
-			s.emitFunctionCallDoneEvents(detected)
 		}
 	}
 
@@ -186,22 +172,7 @@ func (s *responsesStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Pa
 			s.sendEvent("response.reasoning.delta", openaifmt.BuildResponsesReasoningDeltaPayload(s.responseID, p.Text))
 			s.sendEvent("response.reasoning_text.delta", openaifmt.BuildResponsesReasoningTextDeltaPayload(s.responseID, s.ensureReasoningItemID(), 0, 0, p.Text))
 			if s.bufferToolContent {
-				for _, evt := range processToolSieveChunk(&s.thinkingSieve, p.Text, s.toolNames) {
-					if len(evt.ToolCallDeltas) > 0 {
-						if !s.emitEarlyToolDeltas {
-							continue
-						}
-						s.toolCallsEmitted = true
-						s.sendEvent("response.output_tool_call.delta", openaifmt.BuildResponsesToolCallDeltaPayload(s.responseID, formatIncrementalStreamToolCallDeltas(evt.ToolCallDeltas, s.streamToolCallIDs)))
-						s.emitFunctionCallDeltaEvents(evt.ToolCallDeltas)
-					}
-					if len(evt.ToolCalls) > 0 {
-						s.toolCallsEmitted = true
-						s.toolCallsDoneEmitted = true
-						s.sendEvent("response.output_tool_call.done", openaifmt.BuildResponsesToolCallDonePayload(s.responseID, formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.streamToolCallIDs)))
-						s.emitFunctionCallDoneEvents(evt.ToolCalls)
-					}
-				}
+				s.processToolStreamEvents(processToolSieveChunk(&s.thinkingSieve, p.Text, s.toolNames), false)
 			}
 			continue
 		}
@@ -211,28 +182,54 @@ func (s *responsesStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Pa
 			s.sendEvent("response.output_text.delta", openaifmt.BuildResponsesTextDeltaPayload(s.responseID, p.Text))
 			continue
 		}
-		for _, evt := range processToolSieveChunk(&s.sieve, p.Text, s.toolNames) {
-			if evt.Content != "" {
-				s.sendEvent("response.output_text.delta", openaifmt.BuildResponsesTextDeltaPayload(s.responseID, evt.Content))
-			}
-			if len(evt.ToolCallDeltas) > 0 {
-				if !s.emitEarlyToolDeltas {
-					continue
-				}
-				s.toolCallsEmitted = true
-				s.sendEvent("response.output_tool_call.delta", openaifmt.BuildResponsesToolCallDeltaPayload(s.responseID, formatIncrementalStreamToolCallDeltas(evt.ToolCallDeltas, s.streamToolCallIDs)))
-				s.emitFunctionCallDeltaEvents(evt.ToolCallDeltas)
-			}
-			if len(evt.ToolCalls) > 0 {
-				s.toolCallsEmitted = true
-				s.toolCallsDoneEmitted = true
-				s.sendEvent("response.output_tool_call.done", openaifmt.BuildResponsesToolCallDonePayload(s.responseID, formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.streamToolCallIDs)))
-				s.emitFunctionCallDoneEvents(evt.ToolCalls)
-			}
-		}
+		s.processToolStreamEvents(processToolSieveChunk(&s.sieve, p.Text, s.toolNames), true)
 	}
 
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}
+}
+
+func (s *responsesStreamRuntime) processToolStreamEvents(events []toolStreamEvent, emitContent bool) {
+	for _, evt := range events {
+		if emitContent && evt.Content != "" {
+			s.sendEvent("response.output_text.delta", openaifmt.BuildResponsesTextDeltaPayload(s.responseID, evt.Content))
+		}
+		if len(evt.ToolCallDeltas) > 0 {
+			if !s.emitEarlyToolDeltas {
+				continue
+			}
+			formatted := formatIncrementalStreamToolCallDeltas(evt.ToolCallDeltas, s.streamToolCallIDs)
+			if len(formatted) == 0 {
+				continue
+			}
+			s.toolCallsEmitted = true
+			s.sendEvent("response.output_tool_call.delta", openaifmt.BuildResponsesToolCallDeltaPayload(s.responseID, formatted))
+			s.emitFunctionCallDeltaEvents(evt.ToolCallDeltas)
+		}
+		if len(evt.ToolCalls) > 0 {
+			s.emitToolCallsDone(evt.ToolCalls)
+		}
+	}
+}
+
+func (s *responsesStreamRuntime) emitToolCallsDone(calls []util.ParsedToolCall) {
+	if len(calls) == 0 {
+		return
+	}
+	sig := toolCallListSignature(calls)
+	if sig != "" && s.toolCallsDoneSigs[sig] {
+		return
+	}
+	if sig != "" {
+		s.toolCallsDoneSigs[sig] = true
+	}
+	formatted := formatFinalStreamToolCallsWithStableIDs(calls, s.streamToolCallIDs)
+	if len(formatted) == 0 {
+		return
+	}
+	s.toolCallsEmitted = true
+	s.toolCallsDoneEmitted = true
+	s.sendEvent("response.output_tool_call.done", openaifmt.BuildResponsesToolCallDonePayload(s.responseID, formatted))
+	s.emitFunctionCallDoneEvents(calls)
 }
 
 func (s *responsesStreamRuntime) ensureReasoningItemID() string {
@@ -355,4 +352,21 @@ func (s *responsesStreamRuntime) alignCompletedOutputCallIDs(obj map[string]any)
 			}
 		}
 	}
+}
+
+func toolCallListSignature(calls []util.ParsedToolCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, tc := range calls {
+		if i > 0 {
+			b.WriteString("|")
+		}
+		b.WriteString(strings.TrimSpace(tc.Name))
+		b.WriteString(":")
+		args, _ := json.Marshal(tc.Input)
+		b.Write(args)
+	}
+	return b.String()
 }

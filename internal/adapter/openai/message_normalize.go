@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"ds2api/internal/config"
 )
 
-func normalizeOpenAIMessagesForPrompt(raw []any) []map[string]any {
+func normalizeOpenAIMessagesForPrompt(raw []any, traceID string) []map[string]any {
 	out := make([]map[string]any, 0, len(raw))
 	for _, item := range raw {
 		msg, ok := item.(map[string]any)
@@ -17,7 +19,7 @@ func normalizeOpenAIMessagesForPrompt(raw []any) []map[string]any {
 		switch role {
 		case "assistant":
 			content := normalizeOpenAIContentForPrompt(msg["content"])
-			toolCalls := formatAssistantToolCallsForPrompt(msg)
+			toolCalls := formatAssistantToolCallsForPrompt(msg, traceID)
 			combined := joinNonEmpty(content, toolCalls)
 			if combined == "" {
 				continue
@@ -53,7 +55,7 @@ func normalizeOpenAIMessagesForPrompt(raw []any) []map[string]any {
 	return out
 }
 
-func formatAssistantToolCallsForPrompt(msg map[string]any) string {
+func formatAssistantToolCallsForPrompt(msg map[string]any, traceID string) string {
 	entries := make([]string, 0)
 	if calls, ok := msg["tool_calls"].([]any); ok {
 		for i, item := range calls {
@@ -86,6 +88,7 @@ func formatAssistantToolCallsForPrompt(msg map[string]any) string {
 			if args == "" {
 				args = "{}"
 			}
+			maybeWarnSuspiciousToolHistory(traceID, id, name, args)
 			entries = append(entries, fmt.Sprintf("[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: %s\nfunction.name: %s\nfunction.arguments: %s\n[/TOOL_CALL_HISTORY]", id, name, args))
 		}
 	}
@@ -99,6 +102,7 @@ func formatAssistantToolCallsForPrompt(msg map[string]any) string {
 		if args == "" {
 			args = "{}"
 		}
+		maybeWarnSuspiciousToolHistory(traceID, "call_legacy", name, args)
 		entries = append(entries, fmt.Sprintf("[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: call_legacy\nfunction.name: %s\nfunction.arguments: %s\n[/TOOL_CALL_HISTORY]", name, args))
 	}
 
@@ -189,4 +193,46 @@ func joinNonEmpty(parts ...string) string {
 		nonEmpty = append(nonEmpty, p)
 	}
 	return strings.Join(nonEmpty, "\n\n")
+}
+
+func maybeWarnSuspiciousToolHistory(traceID, callID, name, args string) {
+	if !looksLikeConcatenatedJSON(args) {
+		return
+	}
+	traceID = strings.TrimSpace(traceID)
+	if traceID == "" {
+		traceID = "unknown"
+	}
+	config.Logger.Warn(
+		"[openai] suspicious tool call history payload detected",
+		"trace_id", traceID,
+		"tool_call_id", strings.TrimSpace(callID),
+		"name", strings.TrimSpace(name),
+		"arguments_preview", previewToolArgs(args, 160),
+	)
+}
+
+func looksLikeConcatenatedJSON(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "}{") || strings.Contains(trimmed, "][") {
+		return true
+	}
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	var first any
+	if err := dec.Decode(&first); err != nil {
+		return false
+	}
+	var second any
+	return dec.Decode(&second) == nil
+}
+
+func previewToolArgs(raw string, max int) string {
+	trimmed := strings.TrimSpace(raw)
+	if max <= 0 || len(trimmed) <= max {
+		return trimmed
+	}
+	return trimmed[:max]
 }

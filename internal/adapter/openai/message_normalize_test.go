@@ -33,7 +33,7 @@ func TestNormalizeOpenAIMessagesForPrompt_AssistantToolCallsAndToolResult(t *tes
 		},
 	}
 
-	normalized := normalizeOpenAIMessagesForPrompt(raw)
+	normalized := normalizeOpenAIMessagesForPrompt(raw, "")
 	if len(normalized) != 4 {
 		t.Fatalf("expected 4 normalized messages, got %d", len(normalized))
 	}
@@ -68,7 +68,7 @@ func TestNormalizeOpenAIMessagesForPrompt_ToolObjectContentPreserved(t *testing.
 		},
 	}
 
-	normalized := normalizeOpenAIMessagesForPrompt(raw)
+	normalized := normalizeOpenAIMessagesForPrompt(raw, "")
 	got, _ := normalized[0]["content"].(string)
 	if !strings.Contains(got, `"temp":18`) || !strings.Contains(got, `"condition":"sunny"`) {
 		t.Fatalf("expected serialized object in tool content, got %q", got)
@@ -89,7 +89,7 @@ func TestNormalizeOpenAIMessagesForPrompt_ToolArrayBlocksJoined(t *testing.T) {
 		},
 	}
 
-	normalized := normalizeOpenAIMessagesForPrompt(raw)
+	normalized := normalizeOpenAIMessagesForPrompt(raw, "")
 	got, _ := normalized[0]["content"].(string)
 	if !strings.Contains(got, "line-1\nline-2") {
 		t.Fatalf("expected joined text blocks, got %q", got)
@@ -108,7 +108,7 @@ func TestNormalizeOpenAIMessagesForPrompt_FunctionRoleCompatible(t *testing.T) {
 		},
 	}
 
-	normalized := normalizeOpenAIMessagesForPrompt(raw)
+	normalized := normalizeOpenAIMessagesForPrompt(raw, "")
 	if len(normalized) != 1 {
 		t.Fatalf("expected one normalized message, got %d", len(normalized))
 	}
@@ -118,5 +118,52 @@ func TestNormalizeOpenAIMessagesForPrompt_FunctionRoleCompatible(t *testing.T) {
 	got, _ := normalized[0]["content"].(string)
 	if !strings.Contains(got, "name: legacy_tool") || !strings.Contains(got, `"ok":true`) {
 		t.Fatalf("unexpected normalized function-role content: %q", got)
+	}
+}
+
+func TestNormalizeOpenAIMessagesForPrompt_AssistantMultipleToolCallsRemainSeparated(t *testing.T) {
+	raw := []any{
+		map[string]any{
+			"role": "assistant",
+			"tool_calls": []any{
+				map[string]any{
+					"id":   "call_search",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "search_web",
+						"arguments": `{"query":"latest ai news"}`,
+					},
+				},
+				map[string]any{
+					"id":   "call_eval",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "eval_javascript",
+						"arguments": `{"code":"1+1"}`,
+					},
+				},
+			},
+		},
+	}
+
+	normalized := normalizeOpenAIMessagesForPrompt(raw, "")
+	if len(normalized) != 1 {
+		t.Fatalf("expected one normalized assistant message, got %d", len(normalized))
+	}
+	content, _ := normalized[0]["content"].(string)
+	if strings.Count(content, "[TOOL_CALL_HISTORY]") != 2 {
+		t.Fatalf("expected two TOOL_CALL_HISTORY blocks, got %q", content)
+	}
+	if !strings.Contains(content, "tool_call_id: call_search") || !strings.Contains(content, "function.name: search_web") {
+		t.Fatalf("missing first tool call block, got %q", content)
+	}
+	if !strings.Contains(content, "tool_call_id: call_eval") || !strings.Contains(content, "function.name: eval_javascript") {
+		t.Fatalf("missing second tool call block, got %q", content)
+	}
+	if strings.Contains(content, "search_webeval_javascript") {
+		t.Fatalf("unexpected merged function name detected: %q", content)
+	}
+	if strings.Contains(content, `}{"`) {
+		t.Fatalf("unexpected concatenated function arguments detected: %q", content)
 	}
 }

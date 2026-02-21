@@ -246,6 +246,141 @@ func TestHandleResponsesStreamDetectsToolCallsFromThinkingChannel(t *testing.T) 
 	}
 }
 
+func TestHandleResponsesStreamMultiToolCallKeepsNameAndCallIDAligned(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	streamBody := sseLine(`{"tool_calls":[{"name":"search_web","input":{"query":"latest ai news"}},`) +
+		sseLine(`{"name":"eval_javascript","input":{"code":"1+1"}}]}`) +
+		"data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"search_web", "eval_javascript"})
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.output_tool_call.done") {
+		t.Fatalf("expected response.output_tool_call.done event, body=%s", body)
+	}
+	donePayloads := extractAllSSEEventPayloads(body, "response.function_call_arguments.done")
+	if len(donePayloads) != 2 {
+		t.Fatalf("expected two response.function_call_arguments.done events, got %d body=%s", len(donePayloads), body)
+	}
+
+	seenNames := map[string]string{}
+	for _, payload := range donePayloads {
+		name := strings.TrimSpace(asString(payload["name"]))
+		callID := strings.TrimSpace(asString(payload["call_id"]))
+		args := strings.TrimSpace(asString(payload["arguments"]))
+		if callID == "" {
+			t.Fatalf("expected non-empty call_id in done payload: %#v", payload)
+		}
+		if strings.Contains(args, `}{"`) {
+			t.Fatalf("unexpected concatenated arguments in done payload: %#v", payload)
+		}
+		if name == "search_webeval_javascript" {
+			t.Fatalf("unexpected merged tool name in done payload: %#v", payload)
+		}
+		if name != "search_web" && name != "eval_javascript" {
+			t.Fatalf("unexpected tool name in done payload: %#v", payload)
+		}
+		seenNames[name] = callID
+	}
+	if seenNames["search_web"] == "" || seenNames["eval_javascript"] == "" {
+		t.Fatalf("expected done events for both tools, got %#v", seenNames)
+	}
+	if seenNames["search_web"] == seenNames["eval_javascript"] {
+		t.Fatalf("expected distinct call_id per tool, got %#v", seenNames)
+	}
+
+	completed, ok := extractSSEEventPayload(body, "response.completed")
+	if !ok {
+		t.Fatalf("expected response.completed event, body=%s", body)
+	}
+	responseObj, _ := completed["response"].(map[string]any)
+	output, _ := responseObj["output"].([]any)
+	functionCallIDs := map[string]string{}
+	for _, item := range output {
+		m, _ := item.(map[string]any)
+		if m == nil || m["type"] != "function_call" {
+			continue
+		}
+		name := strings.TrimSpace(asString(m["name"]))
+		callID := strings.TrimSpace(asString(m["call_id"]))
+		if name != "" && callID != "" {
+			functionCallIDs[name] = callID
+		}
+	}
+	if functionCallIDs["search_web"] != seenNames["search_web"] {
+		t.Fatalf("search_web call_id mismatch between done and completed: done=%q completed=%q", seenNames["search_web"], functionCallIDs["search_web"])
+	}
+	if functionCallIDs["eval_javascript"] != seenNames["eval_javascript"] {
+		t.Fatalf("eval_javascript call_id mismatch between done and completed: done=%q completed=%q", seenNames["eval_javascript"], functionCallIDs["eval_javascript"])
+	}
+}
+
+func TestHandleResponsesStreamMultiToolCallFromThinkingChannel(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(path, v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": path,
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	streamBody := sseLine("response/thinking_content", `{"tool_calls":[{"name":"search_web","input":{"query":"latest ai news"}},`) +
+		sseLine("response/thinking_content", `{"name":"eval_javascript","input":{"code":"1+1"}}]}`) +
+		"data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-reasoner", "prompt", true, false, []string{"search_web", "eval_javascript"})
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.reasoning_text.delta") {
+		t.Fatalf("expected reasoning stream events, body=%s", body)
+	}
+	donePayloads := extractAllSSEEventPayloads(body, "response.function_call_arguments.done")
+	if len(donePayloads) != 2 {
+		t.Fatalf("expected two response.function_call_arguments.done events, got %d body=%s", len(donePayloads), body)
+	}
+	seen := map[string]bool{}
+	for _, payload := range donePayloads {
+		name := strings.TrimSpace(asString(payload["name"]))
+		if name == "search_webeval_javascript" {
+			t.Fatalf("unexpected merged tool name in thinking channel done payload: %#v", payload)
+		}
+		if name != "search_web" && name != "eval_javascript" {
+			t.Fatalf("unexpected tool name in thinking channel done payload: %#v", payload)
+		}
+		args := strings.TrimSpace(asString(payload["arguments"]))
+		if strings.Contains(args, `}{"`) {
+			t.Fatalf("unexpected concatenated arguments in thinking channel done payload: %#v", payload)
+		}
+		seen[name] = true
+	}
+	if !seen["search_web"] || !seen["eval_javascript"] {
+		t.Fatalf("expected both tools in thinking channel done events, got %#v", seen)
+	}
+}
+
 func extractSSEEventPayload(body, targetEvent string) (map[string]any, bool) {
 	scanner := bufio.NewScanner(strings.NewReader(body))
 	matched := false
@@ -270,4 +405,31 @@ func extractSSEEventPayload(body, targetEvent string) (map[string]any, bool) {
 		return payload, true
 	}
 	return nil, false
+}
+
+func extractAllSSEEventPayloads(body, targetEvent string) []map[string]any {
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	matched := false
+	out := make([]map[string]any, 0, 2)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "event: ") {
+			evt := strings.TrimSpace(strings.TrimPrefix(line, "event: "))
+			matched = evt == targetEvent
+			continue
+		}
+		if !matched || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+		if raw == "" || raw == "[DONE]" {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			continue
+		}
+		out = append(out, payload)
+	}
+	return out
 }
