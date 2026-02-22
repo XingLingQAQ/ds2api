@@ -200,9 +200,14 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 	if insideCodeFence(state.recentTextTail + prefixPart) {
 		return captured, nil, "", true
 	}
-	parsed := util.ParseStandaloneToolCalls(obj, toolNames)
-	if len(parsed) == 0 {
+	parsed := util.ParseStandaloneToolCallsDetailed(obj, toolNames)
+	if len(parsed.Calls) == 0 {
+		if parsed.SawToolCallSyntax && parsed.RejectedByPolicy {
+			// Parsed as tool-call payload but rejected by schema/policy:
+			// consume it to avoid leaking raw tool_calls JSON to user content.
+			return prefixPart, nil, suffixPart, true
+		}
 		return captured, nil, "", true
 	}
-	return prefixPart, parsed, suffixPart, true
+	return prefixPart, parsed.Calls, suffixPart, true
 }

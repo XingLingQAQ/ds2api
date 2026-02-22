@@ -341,6 +341,7 @@ No Output Directory named "public" found after the Build completed.
 
 - **触发条件**：仅在 Release `published` 时触发（普通 push 不会构建）
 - **构建产物**：多平台二进制压缩包 + `sha256sums.txt`
+- **容器镜像发布**：仅发布到 GHCR（`ghcr.io/cjackhwang/ds2api`）
 
 | 平台 | 架构 | 文件格式 |
 | --- | --- | --- |
@@ -377,6 +378,16 @@ cp config.example.json config.json
 1. 在 GitHub 创建并发布 Release（带 tag，如 `vX.Y.Z`）
 2. 等待 Actions 工作流 `Release Artifacts` 完成
 3. 在 Release 的 Assets 下载对应平台压缩包
+
+### 拉取 GHCR 镜像（可选）
+
+```bash
+# latest
+docker pull ghcr.io/cjackhwang/ds2api:latest
+
+# 指定版本（示例）
+docker pull ghcr.io/cjackhwang/ds2api:v2.1.2
+```
 
 ---
 

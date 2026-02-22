@@ -152,6 +152,20 @@ test('sieve keeps plain text intact in tool mode when no tool call appears', () 
   assert.equal(leakedText, '你好，这是普通文本回复。请继续。');
 });
 
+test('sieve intercepts rejected unknown tool payload (no args) without raw leak', () => {
+  const events = runSieve(
+    ['{"tool_calls":[{"name":"not_in_schema"}]}', '后置正文G。'],
+    ['read_file'],
+  );
+  const leakedText = collectText(events);
+  const hasToolCall = events.some((evt) => evt.type === 'tool_calls' && Array.isArray(evt.calls) && evt.calls.length > 0);
+  const hasToolDelta = events.some((evt) => evt.type === 'tool_call_deltas' && Array.isArray(evt.deltas) && evt.deltas.length > 0);
+  assert.equal(hasToolCall, false);
+  assert.equal(hasToolDelta, false);
+  assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
+  assert.equal(leakedText.includes('后置正文G。'), true);
+});
+
 test('sieve emits incremental tool_call_deltas for split arguments payload', () => {
   const state = createToolSieveState();
   const first = processToolSieveChunk(

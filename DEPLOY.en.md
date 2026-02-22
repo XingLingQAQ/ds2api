@@ -341,6 +341,7 @@ Built-in GitHub Actions workflow: `.github/workflows/release-artifacts.yml`
 
 - **Trigger**: only on Release `published` (no build on normal push)
 - **Outputs**: multi-platform binary archives + `sha256sums.txt`
+- **Container publishing**: GHCR only (`ghcr.io/cjackhwang/ds2api`)
 
 | Platform | Architecture | Format |
 | --- | --- | --- |
@@ -377,6 +378,16 @@ cp config.example.json config.json
 1. Create and publish a GitHub Release (with tag, for example `vX.Y.Z`)
 2. Wait for the `Release Artifacts` workflow to complete
 3. Download the matching archive from Release Assets
+
+### Pull from GHCR (Optional)
+
+```bash
+# latest
+docker pull ghcr.io/cjackhwang/ds2api:latest
+
+# specific version (example)
+docker pull ghcr.io/cjackhwang/ds2api:v2.1.2
+```
 
 ---
 

@@ -462,6 +462,7 @@ npm ci --prefix webui && npm run build --prefix webui
 
 - **触发条件**：仅在 GitHub Release `published` 时触发（普通 push 不会触发）
 - **构建产物**：多平台二进制包（`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`）+ `sha256sums.txt`
+- **容器镜像发布**：仅推送到 GHCR（`ghcr.io/cjackhwang/ds2api`）
 - **每个压缩包包含**：`ds2api` 可执行文件、`static/admin`、WASM 文件、配置示例、README、LICENSE
 
 ## 免责声明

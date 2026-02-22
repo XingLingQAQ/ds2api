@@ -12,9 +12,6 @@ permissions:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,20 +92,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        if: "${{ env.DOCKERHUB_USERNAME != '' }}"
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
       - name: Extract Docker metadata
         id: meta_release
         uses: docker/metadata-action@v5
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            ${{ env.DOCKERHUB_USERNAME || 'cjackhwang' }}/ds2api
           tags: |
             type=raw,value=${{ github.event.release.tag_name }}
             type=raw,value=latest

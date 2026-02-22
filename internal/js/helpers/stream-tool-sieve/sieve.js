@@ -205,8 +205,17 @@ function consumeToolCapture(state, toolNames) {
       suffix: '',
     };
   }
+  const rawParsed = parseStandaloneToolCalls(captured.slice(start, obj.end), []);
   const parsed = parseStandaloneToolCalls(captured.slice(start, obj.end), toolNames);
   if (parsed.length === 0) {
+    if (rawParsed.length > 0 && Array.isArray(toolNames) && toolNames.length > 0) {
+      return {
+        ready: true,
+        prefix: prefixPart,
+        calls: [],
+        suffix: suffixPart,
+      };
+    }
     if (state.toolNameSent) {
       return {
         ready: true,

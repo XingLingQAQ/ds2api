@@ -375,7 +375,7 @@ func TestHandleStreamReasonerToolCallInterceptsWithoutRawContentLeak(t *testing.
 	}
 }
 
-func TestHandleStreamUnknownToolNotIntercepted(t *testing.T) {
+func TestHandleStreamUnknownToolDoesNotLeakRawPayload(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"not_in_schema\",\"input\":{\"q\":\"go\"}}]}"}`,
@@ -393,8 +393,34 @@ func TestHandleStreamUnknownToolNotIntercepted(t *testing.T) {
 	if streamHasToolCallsDelta(frames) {
 		t.Fatalf("did not expect tool_calls delta for unknown schema name, body=%s", rec.Body.String())
 	}
-	if !streamHasRawToolJSONContent(frames) {
-		t.Fatalf("expected raw tool_calls json to remain in content for unknown schema name: %s", rec.Body.String())
+	if streamHasRawToolJSONContent(frames) {
+		t.Fatalf("did not expect raw tool_calls json leak for unknown schema name: %s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "stop" {
+		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamUnknownToolNoArgsDoesNotLeakRawPayload(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"not_in_schema\"}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid5b", "deepseek-chat", "prompt", false, false, []string{"search"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if streamHasToolCallsDelta(frames) {
+		t.Fatalf("did not expect tool_calls delta for unknown schema name (no args), body=%s", rec.Body.String())
+	}
+	if streamHasRawToolJSONContent(frames) {
+		t.Fatalf("did not expect raw tool_calls json leak for unknown schema name (no args): %s", rec.Body.String())
 	}
 	if streamFinishReason(frames) != "stop" {
 		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())

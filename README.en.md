@@ -462,6 +462,7 @@ Workflow: `.github/workflows/release-artifacts.yml`
 
 - **Trigger**: only on GitHub Release `published` (normal pushes do not trigger builds)
 - **Outputs**: multi-platform archives (`linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`) + `sha256sums.txt`
+- **Container publishing**: GHCR only (`ghcr.io/cjackhwang/ds2api`)
 - **Each archive includes**: `ds2api` executable, `static/admin`, WASM file, config template, README, LICENSE
 
 ## Disclaimer
