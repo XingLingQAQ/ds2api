@@ -89,12 +89,13 @@ jobs:
         run: |
           set -euo pipefail
           for i in {1..6}; do
-            if curl -fsSIL --max-time 15 https://ghcr.io/v2/ >/dev/null; then
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://ghcr.io/v2/ || true)"
+            if [ "${code}" = "200" ] || [ "${code}" = "401" ] || [ "${code}" = "405" ]; then
               exit 0
             fi
             sleep "$((i * 10))"
           done
-          echo "GHCR endpoint is unreachable after multiple retries." >&2
+          echo "GHCR endpoint is unreachable after multiple retries (last status: ${code:-unknown})." >&2
           exit 1
 
       - name: Log in to GHCR (with retry)
