@@ -89,8 +89,17 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 
 func filterToolCallsDetailed(parsed []ParsedToolCall, availableToolNames []string) ([]ParsedToolCall, []string) {
 	allowed := map[string]struct{}{}
+	allowedCanonical := map[string]string{}
 	for _, name := range availableToolNames {
-		allowed[name] = struct{}{}
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		allowed[trimmed] = struct{}{}
+		lower := strings.ToLower(trimmed)
+		if _, exists := allowedCanonical[lower]; !exists {
+			allowedCanonical[lower] = trimmed
+		}
 	}
 	if len(allowed) == 0 {
 		rejectedSet := map[string]struct{}{}
@@ -112,10 +121,17 @@ func filterToolCallsDetailed(parsed []ParsedToolCall, availableToolNames []strin
 		if tc.Name == "" {
 			continue
 		}
-		if _, ok := allowed[tc.Name]; !ok {
+		matchedName := ""
+		if _, ok := allowed[tc.Name]; ok {
+			matchedName = tc.Name
+		} else if canonical, ok := allowedCanonical[strings.ToLower(tc.Name)]; ok {
+			matchedName = canonical
+		}
+		if matchedName == "" {
 			rejectedSet[tc.Name] = struct{}{}
 			continue
 		}
+		tc.Name = matchedName
 		if tc.Input == nil {
 			tc.Input = map[string]any{}
 		}

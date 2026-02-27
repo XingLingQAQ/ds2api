@@ -46,6 +46,17 @@ func TestParseToolCallsRejectsUnknownToolName(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsAllowsCaseInsensitiveToolNameAndCanonicalizes(t *testing.T) {
+	text := `{"tool_calls":[{"name":"Bash","input":{"command":"ls -al"}}]}`
+	calls := ParseToolCalls(text, []string{"bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "bash" {
+		t.Fatalf("expected canonical tool name bash, got %q", calls[0].Name)
+	}
+}
+
 func TestParseToolCallsDetailedMarksPolicyRejection(t *testing.T) {
 	text := `{"tool_calls":[{"name":"unknown","input":{}}]}`
 	res := ParseToolCallsDetailed(text, []string{"search"})

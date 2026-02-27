@@ -141,6 +141,34 @@ func TestBuildClaudeToolPromptMultipleTools(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeToolPromptSupportsOpenAIStyleFunctionTool(t *testing.T) {
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "search",
+				"description": "Search via function tool",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"q": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	prompt := buildClaudeToolPrompt(tools)
+	if !containsStr(prompt, "Tool: search") {
+		t.Fatalf("expected OpenAI-style function tool name in prompt, got: %q", prompt)
+	}
+	if !containsStr(prompt, "Search via function tool") {
+		t.Fatalf("expected OpenAI-style function tool description in prompt, got: %q", prompt)
+	}
+	if !containsStr(prompt, "\"q\"") {
+		t.Fatalf("expected parameters schema serialized in prompt, got: %q", prompt)
+	}
+}
+
 func TestBuildClaudeToolPromptSkipsNonMap(t *testing.T) {
 	tools := []any{"not a map"}
 	prompt := buildClaudeToolPrompt(tools)
@@ -234,6 +262,21 @@ func TestExtractClaudeToolNamesNil(t *testing.T) {
 	names := extractClaudeToolNames(nil)
 	if len(names) != 0 {
 		t.Fatalf("expected 0, got %v", names)
+	}
+}
+
+func TestExtractClaudeToolNamesSupportsOpenAIStyleFunctionTool(t *testing.T) {
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "search",
+			},
+		},
+	}
+	names := extractClaudeToolNames(tools)
+	if len(names) != 1 || names[0] != "search" {
+		t.Fatalf("expected [search], got %v", names)
 	}
 }
 
