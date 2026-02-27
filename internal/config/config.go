@@ -18,10 +18,11 @@ type Config struct {
 }
 
 type Account struct {
-	Email    string `json:"email,omitempty"`
-	Mobile   string `json:"mobile,omitempty"`
-	Password string `json:"password,omitempty"`
-	Token    string `json:"token,omitempty"`
+	Email      string `json:"email,omitempty"`
+	Mobile     string `json:"mobile,omitempty"`
+	Password   string `json:"password,omitempty"`
+	Token      string `json:"token,omitempty"`
+	TestStatus string `json:"test_status,omitempty"`
 }
 
 type CompatConfig struct {

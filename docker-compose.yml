@@ -1,18 +1,14 @@
 services:
   ds2api:
-    build: .
-    image: ds2api:latest
+    image: crpi-cnazxqmg4avmg4fq.cn-beijing.personal.cr.aliyuncs.com/ronghuaxueleng/ds2api:latest
     container_name: ds2api
+    restart: always
     ports:
-      - "${PORT:-5001}:${PORT:-5001}"
-    env_file:
-      - .env
+      - "6011:5001"
+    volumes:
+      - ./config.json:/app/config.json    # 配置文件
+      - ./.env:/app/.env                  # 环境变量
     environment:
-      - HOST=0.0.0.0
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/busybox", "wget", "-qO-", "http://localhost:${PORT:-5001}/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      - TZ=Asia/Shanghai
+      - LOG_LEVEL=INFO
+      - DS2API_ADMIN_KEY=${DS2API_ADMIN_KEY:-ds2api}

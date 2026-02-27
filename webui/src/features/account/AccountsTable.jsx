@@ -1,4 +1,5 @@
-import { ChevronLeft, ChevronRight, Play, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, Check, Copy, Play, Plus, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 
 export default function AccountsTable({
@@ -10,6 +11,7 @@ export default function AccountsTable({
     batchProgress,
     totalAccounts,
     page,
+    pageSize,
     totalPages,
     resolveAccountIdentifier,
     onTestAll,
@@ -18,7 +20,16 @@ export default function AccountsTable({
     onDeleteAccount,
     onPrevPage,
     onNextPage,
+    onPageSizeChange,
 }) {
+    const [copiedId, setCopiedId] = useState(null)
+
+    const copyId = (id) => {
+        navigator.clipboard.writeText(id).then(() => {
+            setCopiedId(id)
+            setTimeout(() => setCopiedId(null), 1500)
+        })
+    }
     return (
         <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
             <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -83,12 +94,23 @@ export default function AccountsTable({
                                 <div className="flex items-center gap-3 min-w-0">
                                     <div className={clsx(
                                         "w-2 h-2 rounded-full shrink-0",
-                                        acc.has_token ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500"
+                                        acc.test_status === 'failed' ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" :
+                                        (acc.test_status === 'ok' || acc.has_token) ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" :
+                                        "bg-amber-500"
                                     )} />
                                     <div className="min-w-0">
-                                        <div className="font-medium truncate">{id || '-'}</div>
+                                        <div
+                                            className="font-medium truncate flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group"
+                                            onClick={() => copyId(id)}
+                                        >
+                                            <span className="truncate">{id || '-'}</span>
+                                            {copiedId === id
+                                                ? <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                : <Copy className="w-3 h-3 opacity-0 group-hover:opacity-50 shrink-0 transition-opacity" />
+                                            }
+                                        </div>
                                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                            <span>{acc.has_token ? t('accountManager.sessionActive') : t('accountManager.reauthRequired')}</span>
+                                            <span>{acc.test_status === 'failed' ? t('accountManager.testStatusFailed') : (acc.test_status === 'ok' || acc.has_token) ? t('accountManager.sessionActive') : t('accountManager.reauthRequired')}</span>
                                             {acc.token_preview && (
                                                 <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[10px]">
                                                     {acc.token_preview}
@@ -122,8 +144,19 @@ export default function AccountsTable({
 
             {totalPages > 1 && (
                 <div className="p-4 border-t border-border flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                        {t('accountManager.pageInfo', { current: page, total: totalPages, count: totalAccounts })}
+                    <div className="flex items-center gap-3">
+                        <div className="text-sm text-muted-foreground">
+                            {t('accountManager.pageInfo', { current: page, total: totalPages, count: totalAccounts })}
+                        </div>
+                        <select
+                            value={pageSize}
+                            onChange={e => onPageSizeChange(Number(e.target.value))}
+                            className="text-sm border border-border rounded-md px-2 py-1 bg-background text-foreground"
+                        >
+                            {[10, 20, 50, 100, 500, 1000, 2000, 5000].map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
