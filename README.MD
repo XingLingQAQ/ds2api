@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ds2api-icon.svg" width="128" height="128" alt="DS2API icon" />
+</p>
+
 # DS2API
 
 [![License](https://img.shields.io/github/license/CJackHwang/ds2api.svg)](LICENSE)
@@ -5,6 +9,7 @@
 ![Forks](https://img.shields.io/github/forks/CJackHwang/ds2api.svg)
 [![Release](https://img.shields.io/github/v/release/CJackHwang/ds2api?display_name=tag)](https://github.com/CJackHwang/ds2api/releases)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](DEPLOY.md)
+[![Deploy on Zeabur](https://zeabur.com/button.svg)](https://zeabur.com/templates/L4CFHP)
 
 语言 / Language: [中文](README.MD) | [English](README.en.md)
 
@@ -161,6 +166,12 @@ docker-compose logs -f
 ```
 
 更新镜像：`docker-compose up -d --build`
+
+#### Zeabur 一键部署（Dockerfile）
+
+1. 点击上方 “Deploy on Zeabur” 按钮，一键部署。
+2. 部署完成后访问 `/admin`，使用 Zeabur 环境变量/模板指引中的 `DS2API_ADMIN_KEY` 登录。
+3. 在管理台导入/编辑配置（会写入并持久化到 `/data/config.json`）。
 
 ### 方式三：Vercel 部署
 

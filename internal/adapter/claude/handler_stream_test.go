@@ -183,6 +183,66 @@ func TestHandleClaudeStreamRealtimeToolSafety(t *testing.T) {
 	}
 }
 
+func TestHandleClaudeStreamRealtimeToolDetectionFromThinkingFallback(t *testing.T) {
+	h := &Handler{}
+	resp := makeClaudeSSEHTTPResponse(
+		`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"search\""}`,
+		`data: {"p":"response/thinking_content","v":",\"input\":{\"q\":\"go\"}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, true, false, []string{"search"})
+
+	frames := parseClaudeFrames(t, rec.Body.String())
+	foundToolUse := false
+	for _, f := range findClaudeFrames(frames, "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" && contentBlock["name"] == "search" {
+			foundToolUse = true
+			break
+		}
+	}
+	if !foundToolUse {
+		t.Fatalf("expected tool_use block from thinking fallback, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleClaudeStreamRealtimeSkipsThinkingFallbackWhenFinalTextExists(t *testing.T) {
+	h := &Handler{}
+	resp := makeClaudeSSEHTTPResponse(
+		`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"search\""}`,
+		`data: {"p":"response/thinking_content","v":",\"input\":{\"q\":\"go\"}}]}"}`,
+		`data: {"p":"response/content","v":"normal answer"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, true, false, []string{"search"})
+
+	frames := parseClaudeFrames(t, rec.Body.String())
+	for _, f := range findClaudeFrames(frames, "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" {
+			t.Fatalf("unexpected tool_use block when final text exists, body=%s", rec.Body.String())
+		}
+	}
+
+	foundEndTurn := false
+	for _, f := range findClaudeFrames(frames, "message_delta") {
+		delta, _ := f.Payload["delta"].(map[string]any)
+		if delta["stop_reason"] == "end_turn" {
+			foundEndTurn = true
+			break
+		}
+	}
+	if !foundEndTurn {
+		t.Fatalf("expected stop_reason=end_turn, body=%s", rec.Body.String())
+	}
+}
+
 func TestHandleClaudeStreamRealtimeUpstreamErrorEvent(t *testing.T) {
 	h := &Handler{}
 	resp := makeClaudeSSEHTTPResponse(

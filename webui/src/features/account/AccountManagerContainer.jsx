@@ -17,10 +17,12 @@ export default function AccountManagerContainer({ config, onRefresh, onMessage, 
         setKeysExpanded,
         accounts,
         page,
+        pageSize,
         totalPages,
         totalAccounts,
         loadingAccounts,
         fetchAccounts,
+        changePageSize,
         resolveAccountIdentifier,
     } = useAccountsData({ apiFetch })
 
@@ -79,6 +81,7 @@ export default function AccountManagerContainer({ config, onRefresh, onMessage, 
                 batchProgress={batchProgress}
                 totalAccounts={totalAccounts}
                 page={page}
+                pageSize={pageSize}
                 totalPages={totalPages}
                 resolveAccountIdentifier={resolveAccountIdentifier}
                 onTestAll={testAllAccounts}
@@ -87,6 +90,7 @@ export default function AccountManagerContainer({ config, onRefresh, onMessage, 
                 onDeleteAccount={deleteAccount}
                 onPrevPage={() => fetchAccounts(page - 1)}
                 onNextPage={() => fetchAccounts(page + 1)}
+                onPageSizeChange={changePageSize}
             />
 
             <AddKeyModal

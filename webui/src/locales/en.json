@@ -113,6 +113,7 @@
         "testingAllAccounts": "Testing all accounts...",
         "sessionActive": "Session active",
         "reauthRequired": "Re-auth required",
+        "testStatusFailed": "Last test failed",
         "noAccounts": "No accounts found.",
         "modalAddKeyTitle": "Add API key",
         "newKeyLabel": "New key value",

@@ -88,7 +88,15 @@ func runAccountTestsConcurrently(accounts []config.Account, maxConcurrency int, 
 
 func (h *Handler) testAccount(ctx context.Context, acc config.Account, model, message string) map[string]any {
 	start := time.Now()
-	result := map[string]any{"account": acc.Identifier(), "success": false, "response_time": 0, "message": "", "model": model}
+	identifier := acc.Identifier()
+	result := map[string]any{"account": identifier, "success": false, "response_time": 0, "message": "", "model": model}
+	defer func() {
+		status := "failed"
+		if ok, _ := result["success"].(bool); ok {
+			status = "ok"
+		}
+		_ = h.Store.UpdateAccountTestStatus(identifier, status)
+	}()
 	token := strings.TrimSpace(acc.Token)
 	if token == "" {
 		newToken, err := h.DS.Login(ctx, acc)

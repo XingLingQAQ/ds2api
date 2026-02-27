@@ -97,6 +97,18 @@ func (s *Store) FindAccount(identifier string) (Account, bool) {
 	return Account{}, false
 }
 
+func (s *Store) UpdateAccountTestStatus(identifier, status string) error {
+	identifier = strings.TrimSpace(identifier)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, ok := s.findAccountIndexLocked(identifier)
+	if !ok {
+		return errors.New("account not found")
+	}
+	s.cfg.Accounts[idx].TestStatus = status
+	return s.saveLocked()
+}
+
 func (s *Store) UpdateAccountToken(identifier, token string) error {
 	identifier = strings.TrimSpace(identifier)
 	s.mu.Lock()

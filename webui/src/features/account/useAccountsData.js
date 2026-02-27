@@ -6,7 +6,7 @@ export function useAccountsData({ apiFetch }) {
 
     const [accounts, setAccounts] = useState([])
     const [page, setPage] = useState(1)
-    const [pageSize] = useState(10)
+    const [pageSize, setPageSize] = useState(10)
     const [totalPages, setTotalPages] = useState(1)
     const [totalAccounts, setTotalAccounts] = useState(0)
     const [loadingAccounts, setLoadingAccounts] = useState(false)
@@ -16,10 +16,10 @@ export function useAccountsData({ apiFetch }) {
         return String(acc.identifier || acc.email || acc.mobile || '').trim()
     }
 
-    const fetchAccounts = async (targetPage = page) => {
+    const fetchAccounts = async (targetPage = page, targetPageSize = pageSize) => {
         setLoadingAccounts(true)
         try {
-            const res = await apiFetch(`/admin/accounts?page=${targetPage}&page_size=${pageSize}`)
+            const res = await apiFetch(`/admin/accounts?page=${targetPage}&page_size=${targetPageSize}`)
             if (res.ok) {
                 const data = await res.json()
                 setAccounts(data.items || [])
@@ -32,6 +32,11 @@ export function useAccountsData({ apiFetch }) {
         } finally {
             setLoadingAccounts(false)
         }
+    }
+
+    const changePageSize = (newSize) => {
+        setPageSize(newSize)
+        fetchAccounts(1, newSize)
     }
 
     const fetchQueueStatus = async () => {
@@ -59,10 +64,12 @@ export function useAccountsData({ apiFetch }) {
         setKeysExpanded,
         accounts,
         page,
+        pageSize,
         totalPages,
         totalAccounts,
         loadingAccounts,
         fetchAccounts,
+        changePageSize,
         resolveAccountIdentifier,
     }
 }
