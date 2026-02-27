@@ -56,6 +56,7 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request) {
 			"has_password":  acc.Password != "",
 			"has_token":     token != "",
 			"token_preview": preview,
+			"test_status":   acc.TestStatus,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})

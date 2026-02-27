@@ -113,6 +113,7 @@
         "testingAllAccounts": "正在测试所有账号...",
         "sessionActive": "已建立会话",
         "reauthRequired": "需重新登录",
+        "testStatusFailed": "上次测试失败",
         "noAccounts": "未找到任何账号",
         "modalAddKeyTitle": "添加 API 密钥",
         "newKeyLabel": "新密钥值",
