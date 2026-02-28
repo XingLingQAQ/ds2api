@@ -2,37 +2,6 @@
 config.json
 .env
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
-
 # IDE
 .vscode/
 .idea/
@@ -44,7 +13,6 @@ env/
 # Logs
 *.log
 logs/
-uvicorn.log
 artifacts/
 
 # Vercel
@@ -56,8 +24,6 @@ webui/node_modules/
 webui/dist/
 .npm
 .pnpm-store/
-# 保留 webui/package-lock.json 用于 CI 缓存
-# package-lock.json  # 如果有根目录的可以忽略
 yarn.lock
 pnpm-lock.yaml
 
@@ -86,7 +52,9 @@ coverage*.out
 cover/
 
 # Misc
-*.pyc
-*.pyo
 .git/
 Thumbs.db
+
+# Claude Code
+.claude/
+CLAUDE.local.md

@@ -24,8 +24,21 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request) {
 		pageSize = 100
 	}
 	accounts := h.Store.Snapshot().Accounts
-	total := len(accounts)
 	reverseAccounts(accounts)
+	q := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("q")))
+	if q != "" {
+		filtered := make([]config.Account, 0, len(accounts))
+		for _, acc := range accounts {
+			id := strings.ToLower(acc.Identifier())
+			if strings.Contains(id, q) ||
+				strings.Contains(strings.ToLower(acc.Email), q) ||
+				strings.Contains(strings.ToLower(acc.Mobile), q) {
+				filtered = append(filtered, acc)
+			}
+		}
+		accounts = filtered
+	}
+	total := len(accounts)
 	totalPages := 1
 	if total > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
