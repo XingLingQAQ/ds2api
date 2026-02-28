@@ -338,7 +338,8 @@ function showStatus() {
 function waitForProcesses() {
   return new Promise(resolve => {
     const check = setInterval(() => {
-      if (processes.filter(p => !p.killed).length === 0) {
+      const activeCount = processes.filter(proc => proc.exitCode === null && proc.signalCode === null).length;
+      if (activeCount === 0) {
         clearInterval(check);
         resolve();
       }
