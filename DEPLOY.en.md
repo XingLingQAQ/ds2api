@@ -175,6 +175,18 @@ If container logs look normal but the admin panel is unreachable, check these fi
 1. **Port alignment**: when `PORT` is not `5001`, use the same port in your URL (for example `http://localhost:8080/admin`).
 2. **WebUI assets in dev compose**: `docker-compose.dev.yml` runs `go run` in a dev image and does not auto-install Node.js inside the container; if `static/admin` is missing in your repo, `/admin` will return 404. Build once on host: `./scripts/build-webui.sh`.
 
+### 2.7 Zeabur One-Click (Dockerfile)
+
+This repo includes a `zeabur.yaml` template for one-click deployment on Zeabur:
+
+[![Deploy on Zeabur](https://zeabur.com/button.svg)](https://zeabur.com/templates/L4CFHP)
+
+Notes:
+
+- **Port**: DS2API listens on `5001` by default; the template sets `PORT=5001`.
+- **Persistent config**: the template mounts `/data` and sets `DS2API_CONFIG_PATH=/data/config.json`. After importing config in Admin UI, it will be written and persisted to this path.
+- **First login**: after deployment, open `/admin` and login with `DS2API_ADMIN_KEY` shown in Zeabur env/template instructions (recommended: rotate to a strong secret after first login).
+
 ---
 
 ## 3. Vercel Deployment

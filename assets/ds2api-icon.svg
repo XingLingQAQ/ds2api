@@ -1,0 +1,63 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DS2API icon">
+  <defs>
+    <linearGradient id="bg" x1="96" y1="96" x2="416" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06162D" />
+      <stop offset="0.6" stop-color="#0A3A6A" />
+      <stop offset="1" stop-color="#00B4D8" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 180) rotate(90) scale(260)">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="whale" x1="180" y1="140" x2="360" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EAF7FF" />
+      <stop offset="1" stop-color="#BDEBFF" />
+    </linearGradient>
+  </defs>
+
+  <circle cx="256" cy="256" r="240" fill="url(#bg)" />
+  <circle cx="256" cy="256" r="240" fill="url(#glow)" />
+  <circle cx="256" cy="256" r="240" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="8" />
+
+  <!-- subtle waves -->
+  <path d="M104 338 C156 308 204 366 256 334 C308 302 356 360 408 330" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="12" stroke-linecap="round" />
+  <path d="M124 372 C174 344 212 396 256 372 C300 348 338 396 388 368" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="10" stroke-linecap="round" />
+
+  <!-- whale tail (DeepSeek-inspired element, original design) -->
+  <path
+    d="M256 162
+       C228 124 184 118 156 146
+       C132 170 138 206 162 230
+       C190 262 230 252 252 220
+       C254 218 255 216 256 214
+       C257 216 258 218 260 220
+       C282 252 322 262 350 230
+       C374 206 380 170 356 146
+       C328 118 284 124 256 162 Z"
+    fill="url(#whale)"
+  />
+  <rect x="236" y="214" width="40" height="168" rx="20" fill="url(#whale)" />
+
+  <!-- API nodes -->
+  <g opacity="0.55" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round">
+    <path d="M156 236 L208 206" />
+    <path d="M356 236 L304 206" />
+    <path d="M208 206 L232 172" />
+    <circle cx="156" cy="236" r="10" fill="#FFFFFF" fill-opacity="0.28" />
+    <circle cx="208" cy="206" r="10" fill="#FFFFFF" fill-opacity="0.28" />
+    <circle cx="232" cy="172" r="10" fill="#FFFFFF" fill-opacity="0.28" />
+    <circle cx="304" cy="206" r="10" fill="#FFFFFF" fill-opacity="0.28" />
+    <circle cx="356" cy="236" r="10" fill="#FFFFFF" fill-opacity="0.28" />
+  </g>
+
+  <!-- tiny sparkle -->
+  <path
+    d="M378 164
+       C372 170 366 174 358 176
+       C366 178 372 182 378 188
+       C380 180 384 176 392 176
+       C384 174 380 170 378 164 Z"
+    fill="#FFFFFF"
+    fill-opacity="0.32"
+  />
+</svg>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ds2api-icon.svg" width="128" height="128" alt="DS2API icon" />
+</p>
+
 # DS2API
 
 [![License](https://img.shields.io/github/license/CJackHwang/ds2api.svg)](LICENSE)
@@ -5,6 +9,7 @@
 ![Forks](https://img.shields.io/github/forks/CJackHwang/ds2api.svg)
 [![Release](https://img.shields.io/github/v/release/CJackHwang/ds2api?display_name=tag)](https://github.com/CJackHwang/ds2api/releases)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](DEPLOY.en.md)
+[![Deploy on Zeabur](https://zeabur.com/button.svg)](https://zeabur.com/templates/L4CFHP)
 
 Language: [中文](README.MD) | [English](README.en.md)
 
@@ -161,6 +166,12 @@ docker-compose logs -f
 ```
 
 Rebuild after updates: `docker-compose up -d --build`
+
+#### Zeabur One-Click (Dockerfile)
+
+1. Click the “Deploy on Zeabur” button above to deploy.
+2. After deployment, open `/admin` and login with `DS2API_ADMIN_KEY` shown in Zeabur env/template instructions.
+3. Import / edit config in Admin UI (it will be written and persisted to `/data/config.json`).
 
 ### Option 3: Vercel
 
