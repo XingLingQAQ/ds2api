@@ -8,6 +8,9 @@ function createToolSieveState() {
     capture: '',
     capturing: false,
     recentTextTail: '',
+    pendingToolRaw: '',
+    pendingToolCalls: [],
+    disableDeltas: false,
     toolNameSent: false,
     toolName: '',
     toolArgsStart: -1,
@@ -18,6 +21,7 @@ function createToolSieveState() {
 }
 
 function resetIncrementalToolState(state) {
+  state.disableDeltas = false;
   state.toolNameSent = false;
   state.toolName = '';
   state.toolArgsStart = -1;

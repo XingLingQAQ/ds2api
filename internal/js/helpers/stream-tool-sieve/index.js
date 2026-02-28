@@ -10,7 +10,9 @@ const {
 const {
   extractToolNames,
   parseToolCalls,
+  parseToolCallsDetailed,
   parseStandaloneToolCalls,
+  parseStandaloneToolCallsDetailed,
 } = require('./parse');
 const {
   formatOpenAIStreamToolCalls,
@@ -22,6 +24,8 @@ module.exports = {
   processToolSieveChunk,
   flushToolSieve,
   parseToolCalls,
+  parseToolCallsDetailed,
   parseStandaloneToolCalls,
+  parseStandaloneToolCallsDetailed,
   formatOpenAIStreamToolCalls,
 };

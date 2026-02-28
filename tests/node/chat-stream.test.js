@@ -13,8 +13,10 @@ const {
 const {
   parseChunkForContent,
   resolveToolcallPolicy,
+  formatIncrementalToolCallDeltas,
   normalizePreparedToolNames,
   boolDefaultTrue,
+  filterIncrementalToolCallDeltasByAllowed,
 } = handler.__test;
 
 test('chat-stream exposes parser test hooks', () => {
@@ -54,6 +56,46 @@ test('boolDefaultTrue keeps false only when explicitly false', () => {
   assert.equal(boolDefaultTrue(false), false);
   assert.equal(boolDefaultTrue(true), true);
   assert.equal(boolDefaultTrue(undefined), true);
+});
+
+test('filterIncrementalToolCallDeltasByAllowed blocks unknown name and follow-up args', () => {
+  const seen = new Map();
+  const filtered = filterIncrementalToolCallDeltasByAllowed(
+    [
+      { index: 0, name: 'not_in_schema' },
+      { index: 0, arguments: '{"x":1}' },
+    ],
+    ['read_file'],
+    seen,
+  );
+  assert.deepEqual(filtered, []);
+  assert.equal(seen.get(0), '__blocked__');
+});
+
+test('filterIncrementalToolCallDeltasByAllowed keeps allowed name and args', () => {
+  const seen = new Map();
+  const filtered = filterIncrementalToolCallDeltasByAllowed(
+    [
+      { index: 0, name: 'read_file' },
+      { index: 0, arguments: '{"path":"README.MD"}' },
+    ],
+    ['read_file'],
+    seen,
+  );
+  assert.deepEqual(filtered, [
+    { index: 0, name: 'read_file' },
+    { index: 0, arguments: '{"path":"README.MD"}' },
+  ]);
+});
+
+test('incremental and final tool formatting share stable id via idStore', () => {
+  const idStore = new Map();
+  const incremental = formatIncrementalToolCallDeltas([{ index: 0, name: 'read_file' }], idStore);
+  const { formatOpenAIStreamToolCalls } = require('../../internal/js/helpers/stream-tool-sieve.js');
+  const finalCalls = formatOpenAIStreamToolCalls([{ name: 'read_file', input: { path: 'README.MD' } }], idStore);
+  assert.equal(incremental.length, 1);
+  assert.equal(finalCalls.length, 1);
+  assert.equal(incremental[0].id, finalCalls[0].id);
 });
 
 test('parseChunkForContent keeps split response/content fragments inside response array', () => {

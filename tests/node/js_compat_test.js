@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const chatStream = require('../../api/chat-stream.js');
-const { parseToolCalls } = require('../../internal/js/helpers/stream-tool-sieve.js');
+const { parseToolCalls, parseStandaloneToolCalls } = require('../../internal/js/helpers/stream-tool-sieve.js');
 
 const { parseChunkForContent, estimateTokens } = chatStream.__test;
 
@@ -41,12 +41,14 @@ test('js compat: toolcall fixtures', () => {
 
   for (const file of files) {
     const name = file.replace(/\.json$/i, '');
-    const fixture = readJSON(path.join(fixtureDir, file));
-    const expected = readJSON(path.join(expectedDir, `toolcalls_${name}.json`));
-    const got = parseToolCalls(fixture.text, fixture.tool_names || []);
-    assert.deepEqual(got, expected.calls, `${name}: calls mismatch`);
-  }
-});
+      const fixture = readJSON(path.join(fixtureDir, file));
+      const expected = readJSON(path.join(expectedDir, `toolcalls_${name}.json`));
+      const mode = typeof fixture.mode === 'string' ? fixture.mode.trim().toLowerCase() : '';
+      const parser = mode === 'standalone' ? parseStandaloneToolCalls : parseToolCalls;
+      const got = parser(fixture.text, fixture.tool_names || []);
+      assert.deepEqual(got, expected.calls, `${name}: calls mismatch`);
+    }
+  });
 
 test('js compat: token fixtures', () => {
   const fixture = readJSON(path.join(compatRoot, 'fixtures', 'token_cases.json'));

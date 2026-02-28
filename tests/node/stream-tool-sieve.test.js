@@ -9,7 +9,9 @@ const {
   processToolSieveChunk,
   flushToolSieve,
   parseToolCalls,
+  parseToolCallsDetailed,
   parseStandaloneToolCalls,
+  formatOpenAIStreamToolCalls,
 } = require('../../internal/js/helpers/stream-tool-sieve.js');
 
 function runSieve(chunks, toolNames) {
@@ -60,13 +62,25 @@ test('parseToolCalls drops unknown schema names when toolNames is provided', () 
   assert.equal(calls.length, 0);
 });
 
-test('parseToolCalls keeps unknown names when toolNames is empty', () => {
+test('parseToolCalls matches tool name case-insensitively and canonicalizes', () => {
+  const payload = JSON.stringify({
+    tool_calls: [{ name: 'Read_File', input: { path: 'README.MD' } }],
+  });
+  const calls = parseToolCalls(payload, ['read_file']);
+  assert.deepEqual(calls, [{ name: 'read_file', input: { path: 'README.MD' } }]);
+});
+
+test('parseToolCalls rejects all names when toolNames is empty (Go strict parity)', () => {
   const payload = JSON.stringify({
     tool_calls: [{ name: 'not_in_schema', input: { q: 'go' } }],
   });
   const calls = parseToolCalls(payload, []);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].name, 'not_in_schema');
+  assert.equal(calls.length, 0);
+
+  const detailed = parseToolCallsDetailed(payload, []);
+  assert.equal(detailed.sawToolCallSyntax, true);
+  assert.equal(detailed.rejectedByPolicy, true);
+  assert.deepEqual(detailed.rejectedToolNames, ['not_in_schema']);
 });
 
 test('parseToolCalls supports fenced json and function.arguments string payload', () => {
@@ -95,7 +109,7 @@ test('parseStandaloneToolCalls ignores fenced code block tool_call examples', ()
   assert.equal(calls.length, 0);
 });
 
-test('sieve emits tool_calls and does not leak suspicious prefix on late key convergence', () => {
+test('sieve keeps late key convergence payload as plain text in strict mode', () => {
   const events = runSieve(
     [
       '{"',
@@ -107,9 +121,9 @@ test('sieve emits tool_calls and does not leak suspicious prefix on late key con
   const leakedText = collectText(events);
   const hasToolCall = events.some((evt) => evt.type === 'tool_calls' && Array.isArray(evt.calls) && evt.calls.length > 0);
   const hasToolDelta = events.some((evt) => evt.type === 'tool_call_deltas' && Array.isArray(evt.deltas) && evt.deltas.length > 0);
-  assert.equal(hasToolCall || hasToolDelta, true);
-  assert.equal(leakedText.includes('{'), false);
-  assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
+  assert.equal(hasToolCall || hasToolDelta, false);
+  assert.equal(leakedText.includes('{'), true);
+  assert.equal(leakedText.toLowerCase().includes('tool_calls'), true);
   assert.equal(leakedText.includes('后置正文C。'), true);
 });
 
@@ -180,7 +194,7 @@ test('sieve intercepts rejected unknown tool payload (no args) without raw leak'
   assert.equal(leakedText.includes('后置正文G。'), true);
 });
 
-test('sieve emits incremental tool_call_deltas for split arguments payload', () => {
+test('sieve emits final tool_calls for split arguments payload without incremental deltas', () => {
   const state = createToolSieveState();
   const first = processToolSieveChunk(
     state,
@@ -195,37 +209,43 @@ test('sieve emits incremental tool_call_deltas for split arguments payload', () 
   const tail = flushToolSieve(state, ['read_file']);
   const events = [...first, ...second, ...tail];
   const deltaEvents = events.filter((evt) => evt.type === 'tool_call_deltas');
-  assert.equal(deltaEvents.length > 0, true);
-  const merged = deltaEvents.flatMap((evt) => evt.deltas || []);
-  const hasName = merged.some((d) => d.name === 'read_file');
-  const argsJoined = merged
-    .map((d) => d.arguments || '')
-    .join('');
-  assert.equal(hasName, true);
-  assert.equal(argsJoined.includes('"path":"README.MD"'), true);
-  assert.equal(argsJoined.includes('"mode":"head"'), true);
+  assert.equal(deltaEvents.length, 0);
+  const finalCalls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+  assert.equal(finalCalls.length, 1);
+  assert.equal(finalCalls[0].name, 'read_file');
+  assert.deepEqual(finalCalls[0].input, { path: 'README.MD', mode: 'head' });
 });
 
-test('sieve still intercepts tool call after leading plain text without suffix', () => {
+test('sieve keeps tool json as text when leading prose exists (strict mode)', () => {
   const events = runSieve(
     ['我将调用工具。', '{"tool_calls":[{"name":"read_file","input":{"path":"README.MD"}}]}'],
     ['read_file'],
   );
   const hasTool = events.some((evt) => (evt.type === 'tool_calls' && evt.calls?.length > 0) || (evt.type === 'tool_call_deltas' && evt.deltas?.length > 0));
   const leakedText = collectText(events);
-  assert.equal(hasTool, true);
+  assert.equal(hasTool, false);
   assert.equal(leakedText.includes('我将调用工具。'), true);
-  assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
+  assert.equal(leakedText.toLowerCase().includes('tool_calls'), true);
 });
 
-test('sieve intercepts tool call and preserves trailing same-chunk text', () => {
+test('sieve keeps same-chunk trailing prose payload as text in strict mode', () => {
   const events = runSieve(
     ['{"tool_calls":[{"name":"read_file","input":{"path":"README.MD"}}]}然后继续解释。'],
     ['read_file'],
   );
   const hasTool = events.some((evt) => (evt.type === 'tool_calls' && evt.calls?.length > 0) || (evt.type === 'tool_call_deltas' && evt.deltas?.length > 0));
   const leakedText = collectText(events);
-  assert.equal(hasTool, true);
+  assert.equal(hasTool, false);
   assert.equal(leakedText.includes('然后继续解释。'), true);
-  assert.equal(leakedText.toLowerCase().includes('tool_calls'), false);
+  assert.equal(leakedText.toLowerCase().includes('tool_calls'), true);
+});
+
+test('formatOpenAIStreamToolCalls reuses ids with the same idStore', () => {
+  const idStore = new Map();
+  const calls = [{ name: 'read_file', input: { path: 'README.MD' } }];
+  const first = formatOpenAIStreamToolCalls(calls, idStore);
+  const second = formatOpenAIStreamToolCalls(calls, idStore);
+  assert.equal(first.length, 1);
+  assert.equal(second.length, 1);
+  assert.equal(first[0].id, second[0].id);
 });

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ds2api/internal/sse"
@@ -67,6 +68,7 @@ func TestGoCompatToolcallFixtures(t *testing.T) {
 		var fixture struct {
 			Text      string   `json:"text"`
 			ToolNames []string `json:"tool_names"`
+			Mode      string   `json:"mode"`
 		}
 		mustLoadJSON(t, fixturePath, &fixture)
 
@@ -75,7 +77,13 @@ func TestGoCompatToolcallFixtures(t *testing.T) {
 		}
 		mustLoadJSON(t, expectedPath, &expected)
 
-		got := util.ParseToolCalls(fixture.Text, fixture.ToolNames)
+		var got []util.ParsedToolCall
+		switch strings.ToLower(strings.TrimSpace(fixture.Mode)) {
+		case "standalone":
+			got = util.ParseStandaloneToolCalls(fixture.Text, fixture.ToolNames)
+		default:
+			got = util.ParseToolCalls(fixture.Text, fixture.ToolNames)
+		}
 		if len(got) == 0 && len(expected.Calls) == 0 {
 			continue
 		}

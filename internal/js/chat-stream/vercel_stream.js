@@ -5,7 +5,7 @@ const {
   createToolSieveState,
   processToolSieveChunk,
   flushToolSieve,
-  parseToolCalls,
+  parseStandaloneToolCalls,
   formatOpenAIStreamToolCalls,
 } = require('../helpers/stream-tool-sieve');
 const {
@@ -24,7 +24,6 @@ const {
 } = require('./token_usage');
 const {
   resolveToolcallPolicy,
-  formatIncrementalToolCallDeltas,
 } = require('./toolcall_policy');
 const {
   createChatCompletionEmitter,
@@ -130,7 +129,6 @@ async function handleVercelStream(req, res, rawBody, payload) {
     let thinkingText = '';
     let outputText = '';
     const toolSieveEnabled = toolPolicy.toolSieveEnabled;
-    const emitEarlyToolDeltas = toolPolicy.emitEarlyToolDeltas;
     const toolSieveState = createToolSieveState();
     let toolCallsEmitted = false;
     const streamToolCallIDs = new Map();
@@ -155,13 +153,18 @@ async function handleVercelStream(req, res, rawBody, payload) {
         await releaseLease();
         return;
       }
-      const detected = parseToolCalls(outputText, toolNames);
+      const detected = parseStandaloneToolCalls(outputText, toolNames);
       if (detected.length > 0 && !toolCallsEmitted) {
         toolCallsEmitted = true;
-        sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(detected) });
+        sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(detected, streamToolCallIDs) });
       } else if (toolSieveEnabled) {
         const tailEvents = flushToolSieve(toolSieveState, toolNames);
         for (const evt of tailEvents) {
+          if (evt.type === 'tool_calls' && Array.isArray(evt.calls) && evt.calls.length > 0) {
+            toolCallsEmitted = true;
+            sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(evt.calls, streamToolCallIDs) });
+            continue;
+          }
           if (evt.text) {
             sendDeltaFrame({ content: evt.text });
           }
@@ -252,17 +255,9 @@ async function handleVercelStream(req, res, rawBody, payload) {
               }
               const events = processToolSieveChunk(toolSieveState, p.text, toolNames);
               for (const evt of events) {
-                if (evt.type === 'tool_call_deltas' && Array.isArray(evt.deltas) && evt.deltas.length > 0) {
-                  if (!emitEarlyToolDeltas) {
-                    continue;
-                  }
-                  toolCallsEmitted = true;
-                  sendDeltaFrame({ tool_calls: formatIncrementalToolCallDeltas(evt.deltas, streamToolCallIDs) });
-                  continue;
-                }
                 if (evt.type === 'tool_calls') {
                   toolCallsEmitted = true;
-                  sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(evt.calls) });
+                  sendDeltaFrame({ tool_calls: formatOpenAIStreamToolCalls(evt.calls, streamToolCallIDs) });
                   continue;
                 }
                 if (evt.text) {

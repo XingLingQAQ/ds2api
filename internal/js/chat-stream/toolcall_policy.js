@@ -68,6 +68,47 @@ function formatIncrementalToolCallDeltas(deltas, idStore) {
   return out;
 }
 
+function filterIncrementalToolCallDeltasByAllowed(deltas, allowedNames, seenNames) {
+  if (!Array.isArray(deltas) || deltas.length === 0) {
+    return [];
+  }
+  const seen = seenNames instanceof Map ? seenNames : new Map();
+  const allowed = new Set((allowedNames || []).filter((name) => asString(name) !== ''));
+  if (allowed.size === 0) {
+    for (const d of deltas) {
+      if (d && typeof d === 'object' && asString(d.name)) {
+        const index = Number.isInteger(d.index) ? d.index : 0;
+        seen.set(index, '__blocked__');
+      }
+    }
+    return [];
+  }
+
+  const out = [];
+  for (const d of deltas) {
+    if (!d || typeof d !== 'object') {
+      continue;
+    }
+    const index = Number.isInteger(d.index) ? d.index : 0;
+    const name = asString(d.name);
+    if (name) {
+      if (!allowed.has(name)) {
+        seen.set(index, '__blocked__');
+        continue;
+      }
+      seen.set(index, name);
+      out.push(d);
+      continue;
+    }
+    const existing = asString(seen.get(index));
+    if (!existing || existing === '__blocked__') {
+      continue;
+    }
+    out.push(d);
+  }
+  return out;
+}
+
 function ensureStreamToolCallID(idStore, index) {
   const key = Number.isInteger(index) ? index : 0;
   const existing = idStore.get(key);
@@ -104,4 +145,5 @@ module.exports = {
   normalizePreparedToolNames,
   boolDefaultTrue,
   formatIncrementalToolCallDeltas,
+  filterIncrementalToolCallDeltasByAllowed,
 };

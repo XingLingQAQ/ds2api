@@ -2,19 +2,33 @@
 
 const crypto = require('crypto');
 
-function formatOpenAIStreamToolCalls(calls) {
+function formatOpenAIStreamToolCalls(calls, idStore) {
   if (!Array.isArray(calls) || calls.length === 0) {
     return [];
   }
   return calls.map((c, idx) => ({
     index: idx,
-    id: `call_${newCallID()}`,
+    id: ensureStreamToolCallID(idStore, idx),
     type: 'function',
     function: {
       name: c.name,
       arguments: JSON.stringify(c.input || {}),
     },
   }));
+}
+
+function ensureStreamToolCallID(idStore, index) {
+  if (!(idStore instanceof Map)) {
+    return `call_${newCallID()}`;
+  }
+  const key = Number.isInteger(index) ? index : 0;
+  const existing = idStore.get(key);
+  if (existing) {
+    return existing;
+  }
+  const next = `call_${newCallID()}`;
+  idStore.set(key, next);
+  return next;
 }
 
 function newCallID() {

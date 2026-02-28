@@ -10,8 +10,10 @@ const {
 } = require('./sse_parse');
 const {
   resolveToolcallPolicy,
+  formatIncrementalToolCallDeltas,
   normalizePreparedToolNames,
   boolDefaultTrue,
+  filterIncrementalToolCallDeltasByAllowed,
 } = require('./toolcall_policy');
 const {
   estimateTokens,
@@ -82,7 +84,9 @@ module.exports.__test = {
   shouldSkipPath,
   asString,
   resolveToolcallPolicy,
+  formatIncrementalToolCallDeltas,
   normalizePreparedToolNames,
   boolDefaultTrue,
+  filterIncrementalToolCallDeltasByAllowed,
   estimateTokens,
 };
