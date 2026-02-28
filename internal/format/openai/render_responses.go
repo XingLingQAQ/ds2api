@@ -11,12 +11,9 @@ import (
 )
 
 func BuildResponseObject(responseID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
-	// Align responses tool-call semantics with chat/completions:
-	// mixed prose + tool_call payloads should still be interpreted as tool calls.
-	detected := util.ParseToolCalls(finalText, toolNames)
-	if len(detected) == 0 && strings.TrimSpace(finalThinking) != "" {
-		detected = util.ParseToolCalls(finalThinking, toolNames)
-	}
+	// Strict mode: only standalone, structured tool-call payloads are treated
+	// as executable tool calls.
+	detected := util.ParseStandaloneToolCalls(finalText, toolNames)
 	exposedOutputText := finalText
 	output := make([]any, 0, 2)
 	if len(detected) > 0 {

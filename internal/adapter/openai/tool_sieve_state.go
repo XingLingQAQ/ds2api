@@ -7,17 +7,19 @@ import (
 )
 
 type toolStreamSieveState struct {
-	pending        strings.Builder
-	capture        strings.Builder
-	capturing      bool
-	recentTextTail string
-	disableDeltas  bool
-	toolNameSent   bool
-	toolName       string
-	toolArgsStart  int
-	toolArgsSent   int
-	toolArgsString bool
-	toolArgsDone   bool
+	pending          strings.Builder
+	capture          strings.Builder
+	capturing        bool
+	recentTextTail   string
+	pendingToolRaw   string
+	pendingToolCalls []util.ParsedToolCall
+	disableDeltas    bool
+	toolNameSent     bool
+	toolName         string
+	toolArgsStart    int
+	toolArgsSent     int
+	toolArgsString   bool
+	toolArgsDone     bool
 }
 
 type toolStreamEvent struct {

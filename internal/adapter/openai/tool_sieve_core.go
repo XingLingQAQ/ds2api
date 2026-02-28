@@ -14,6 +14,21 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 		state.pending.WriteString(chunk)
 	}
 	events := make([]toolStreamEvent, 0, 2)
+	if len(state.pendingToolCalls) > 0 {
+		pending := state.pending.String()
+		if strings.TrimSpace(pending) != "" {
+			content := state.pendingToolRaw + pending
+			state.pending.Reset()
+			state.pendingToolRaw = ""
+			state.pendingToolCalls = nil
+			state.noteText(content)
+			events = append(events, toolStreamEvent{Content: content})
+		} else {
+			// Wait for either more non-whitespace content (demote to plain text)
+			// or stream flush (promote to executable tool calls).
+			return events
+		}
+	}
 
 	for {
 		if state.capturing {
@@ -21,22 +36,22 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 				state.capture.WriteString(state.pending.String())
 				state.pending.Reset()
 			}
-			if deltas := buildIncrementalToolDeltas(state); len(deltas) > 0 {
-				events = append(events, toolStreamEvent{ToolCallDeltas: deltas})
-			}
 			prefix, calls, suffix, ready := consumeToolCapture(state, toolNames)
 			if !ready {
 				break
 			}
+			captured := state.capture.String()
 			state.capture.Reset()
 			state.capturing = false
 			state.resetIncrementalToolState()
+			if len(calls) > 0 {
+				state.pendingToolRaw = captured
+				state.pendingToolCalls = calls
+				continue
+			}
 			if prefix != "" {
 				state.noteText(prefix)
 				events = append(events, toolStreamEvent{Content: prefix})
-			}
-			if len(calls) > 0 {
-				events = append(events, toolStreamEvent{ToolCalls: calls})
 			}
 			if suffix != "" {
 				state.pending.WriteString(suffix)
@@ -80,6 +95,11 @@ func flushToolSieve(state *toolStreamSieveState, toolNames []string) []toolStrea
 		return nil
 	}
 	events := processToolSieveChunk(state, "", toolNames)
+	if len(state.pendingToolCalls) > 0 {
+		events = append(events, toolStreamEvent{ToolCalls: state.pendingToolCalls})
+		state.pendingToolRaw = ""
+		state.pendingToolCalls = nil
+	}
 	if state.capturing {
 		consumedPrefix, consumedCalls, consumedSuffix, ready := consumeToolCapture(state, toolNames)
 		if ready {
@@ -189,6 +209,11 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 	prefixPart := captured[:start]
 	suffixPart := captured[end:]
 	if insideCodeFence(state.recentTextTail + prefixPart) {
+		return captured, nil, "", true
+	}
+	// Strict mode: only standalone tool payloads are executable. If the
+	// payload is wrapped by non-whitespace prose, keep it as plain text.
+	if strings.TrimSpace(state.recentTextTail) != "" || strings.TrimSpace(prefixPart) != "" || strings.TrimSpace(suffixPart) != "" {
 		return captured, nil, "", true
 	}
 	parsed := util.ParseStandaloneToolCallsDetailed(obj, toolNames)

@@ -211,7 +211,7 @@ func TestHandleNonStreamUnknownToolNotIntercepted(t *testing.T) {
 	}
 }
 
-func TestHandleNonStreamEmbeddedToolCallExampleIntercepted(t *testing.T) {
+func TestHandleNonStreamEmbeddedToolCallExampleRemainsText(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"下面是示例："}`,
@@ -229,16 +229,16 @@ func TestHandleNonStreamEmbeddedToolCallExampleIntercepted(t *testing.T) {
 	out := decodeJSONBody(t, rec.Body.String())
 	choices, _ := out["choices"].([]any)
 	choice, _ := choices[0].(map[string]any)
-	if choice["finish_reason"] != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	if choice["finish_reason"] != "stop" {
+		t.Fatalf("expected finish_reason=stop, got %#v", choice["finish_reason"])
 	}
 	msg, _ := choice["message"].(map[string]any)
-	toolCalls, _ := msg["tool_calls"].([]any)
-	if len(toolCalls) == 0 {
-		t.Fatalf("expected tool_calls field for embedded example: %#v", msg["tool_calls"])
+	if _, ok := msg["tool_calls"]; ok {
+		t.Fatalf("did not expect tool_calls field for embedded example: %#v", msg["tool_calls"])
 	}
-	if msg["content"] != nil {
-		t.Fatalf("expected content nil when tool_calls detected, got %#v", msg["content"])
+	content, _ := msg["content"].(string)
+	if !strings.Contains(content, "下面是示例：") || !strings.Contains(content, "请勿执行。") || !strings.Contains(content, `"tool_calls"`) {
+		t.Fatalf("expected embedded example to remain plain text, got %#v", content)
 	}
 }
 
@@ -513,8 +513,8 @@ func TestHandleStreamToolCallMixedWithPlainTextSegments(t *testing.T) {
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if !streamHasToolCallsDelta(frames) {
-		t.Fatalf("expected tool_calls delta in mixed prose stream, body=%s", rec.Body.String())
+	if streamHasToolCallsDelta(frames) {
+		t.Fatalf("did not expect tool_calls delta in mixed prose stream, body=%s", rec.Body.String())
 	}
 	content := strings.Builder{}
 	for _, frame := range frames {
@@ -531,15 +531,15 @@ func TestHandleStreamToolCallMixedWithPlainTextSegments(t *testing.T) {
 	if !strings.Contains(got, "下面是示例：") || !strings.Contains(got, "请勿执行。") {
 		t.Fatalf("expected pre/post plain text to pass sieve, got=%q", got)
 	}
-	if strings.Contains(strings.ToLower(got), `"tool_calls"`) {
-		t.Fatalf("expected no raw tool_calls json leak in content, got=%q", got)
+	if !strings.Contains(strings.ToLower(got), `"tool_calls"`) {
+		t.Fatalf("expected embedded tool json to remain text in strict mode, got=%q", got)
 	}
-	if streamFinishReason(frames) != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls for mixed prose, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "stop" {
+		t.Fatalf("expected finish_reason=stop for mixed prose, body=%s", rec.Body.String())
 	}
 }
 
-func TestHandleStreamToolCallAfterLeadingTextStillIntercepted(t *testing.T) {
+func TestHandleStreamToolCallAfterLeadingTextRemainsText(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"我将调用工具。"}`,
@@ -555,8 +555,8 @@ func TestHandleStreamToolCallAfterLeadingTextStillIntercepted(t *testing.T) {
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if !streamHasToolCallsDelta(frames) {
-		t.Fatalf("expected tool_calls delta, body=%s", rec.Body.String())
+	if streamHasToolCallsDelta(frames) {
+		t.Fatalf("did not expect tool_calls delta, body=%s", rec.Body.String())
 	}
 	content := strings.Builder{}
 	for _, frame := range frames {
@@ -573,15 +573,15 @@ func TestHandleStreamToolCallAfterLeadingTextStillIntercepted(t *testing.T) {
 	if !strings.Contains(got, "我将调用工具。") {
 		t.Fatalf("expected leading text to keep streaming, got=%q", got)
 	}
-	if strings.Contains(strings.ToLower(got), "tool_calls") {
-		t.Fatalf("unexpected raw tool json leak, got=%q", got)
+	if !strings.Contains(strings.ToLower(got), "tool_calls") {
+		t.Fatalf("expected tool_calls example text preserved, got=%q", got)
 	}
-	if streamFinishReason(frames) != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "stop" {
+		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
 	}
 }
 
-func TestHandleStreamToolCallWithSameChunkTrailingTextStillIntercepted(t *testing.T) {
+func TestHandleStreamToolCallWithSameChunkTrailingTextRemainsText(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"go\"}}]}接下来我会继续说明。"}`,
@@ -596,8 +596,8 @@ func TestHandleStreamToolCallWithSameChunkTrailingTextStillIntercepted(t *testin
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if !streamHasToolCallsDelta(frames) {
-		t.Fatalf("expected tool_calls delta, body=%s", rec.Body.String())
+	if streamHasToolCallsDelta(frames) {
+		t.Fatalf("did not expect tool_calls delta, body=%s", rec.Body.String())
 	}
 	content := strings.Builder{}
 	for _, frame := range frames {
@@ -614,15 +614,15 @@ func TestHandleStreamToolCallWithSameChunkTrailingTextStillIntercepted(t *testin
 	if !strings.Contains(got, "接下来我会继续说明。") {
 		t.Fatalf("expected trailing plain text to be preserved, got=%q", got)
 	}
-	if strings.Contains(strings.ToLower(got), "tool_calls") {
-		t.Fatalf("unexpected raw tool json leak, got=%q", got)
+	if !strings.Contains(strings.ToLower(got), "tool_calls") {
+		t.Fatalf("expected tool_calls example text preserved, got=%q", got)
 	}
-	if streamFinishReason(frames) != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "stop" {
+		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
 	}
 }
 
-func TestHandleStreamToolCallKeyAppearsLateStillNoPrefixLeak(t *testing.T) {
+func TestHandleStreamToolCallKeyAppearsLateRemainsText(t *testing.T) {
 	h := &Handler{}
 	spaces := strings.Repeat(" ", 200)
 	resp := makeSSEHTTPResponse(
@@ -640,11 +640,8 @@ func TestHandleStreamToolCallKeyAppearsLateStillNoPrefixLeak(t *testing.T) {
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if !streamHasToolCallsDelta(frames) {
-		t.Fatalf("expected tool_calls delta, body=%s", rec.Body.String())
-	}
-	if streamHasRawToolJSONContent(frames) {
-		t.Fatalf("raw tool_calls JSON leaked in content delta: %s", rec.Body.String())
+	if streamHasToolCallsDelta(frames) {
+		t.Fatalf("did not expect tool_calls delta, body=%s", rec.Body.String())
 	}
 	content := strings.Builder{}
 	for _, frame := range frames {
@@ -658,14 +655,14 @@ func TestHandleStreamToolCallKeyAppearsLateStillNoPrefixLeak(t *testing.T) {
 		}
 	}
 	got := content.String()
-	if strings.Contains(got, "{") {
-		t.Fatalf("unexpected suspicious prefix leak in content: %q", got)
+	if !strings.Contains(strings.ToLower(got), "tool_calls") || !strings.Contains(got, "{") {
+		t.Fatalf("expected embedded tool json to remain in text, got=%q", got)
 	}
 	if !strings.Contains(got, "后置正文C。") {
 		t.Fatalf("expected stream to continue after tool json convergence, got=%q", got)
 	}
-	if streamFinishReason(frames) != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "stop" {
+		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
 	}
 }
 
@@ -743,7 +740,7 @@ func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testin
 	}
 }
 
-func TestHandleStreamToolCallArgumentsEmitIncrementally(t *testing.T) {
+func TestHandleStreamToolCallArgumentsEmitAsSingleCompletedChunk(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"go"}`,
@@ -766,8 +763,8 @@ func TestHandleStreamToolCallArgumentsEmitIncrementally(t *testing.T) {
 		t.Fatalf("raw tool_calls JSON leaked in content delta: %s", rec.Body.String())
 	}
 	argChunks := streamToolCallArgumentChunks(frames)
-	if len(argChunks) < 2 {
-		t.Fatalf("expected incremental arguments chunks, got=%v body=%s", argChunks, rec.Body.String())
+	if len(argChunks) == 0 {
+		t.Fatalf("expected tool call arguments chunk, got=%v body=%s", argChunks, rec.Body.String())
 	}
 	joined := strings.Join(argChunks, "")
 	if !strings.Contains(joined, `"q":"golang"`) || !strings.Contains(joined, `"page":1`) {

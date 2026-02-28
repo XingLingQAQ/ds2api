@@ -57,16 +57,20 @@ func NewApp() *App {
 	r.Use(cors)
 	r.Use(timeout(0))
 
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	healthzHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+	}
+	readyzHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
-	})
+	}
+	r.Get("/healthz", healthzHandler)
+	r.Head("/healthz", healthzHandler)
+	r.Get("/readyz", readyzHandler)
+	r.Head("/readyz", readyzHandler)
 	openai.RegisterRoutes(r, openaiHandler)
 	claude.RegisterRoutes(r, claudeHandler)
 	gemini.RegisterRoutes(r, geminiHandler)

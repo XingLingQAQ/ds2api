@@ -135,7 +135,7 @@ func TestNormalizeResponsesInputAsMessagesFunctionCallItem(t *testing.T) {
 	}
 }
 
-func TestNormalizeResponsesInputAsMessagesFunctionCallItemRepairsConcatenatedArguments(t *testing.T) {
+func TestNormalizeResponsesInputAsMessagesFunctionCallItemPreservesConcatenatedArguments(t *testing.T) {
 	msgs := normalizeResponsesInputAsMessages([]any{
 		map[string]any{
 			"type":      "function_call",
@@ -151,8 +151,8 @@ func TestNormalizeResponsesInputAsMessagesFunctionCallItemRepairsConcatenatedArg
 	toolCalls, _ := m["tool_calls"].([]any)
 	call, _ := toolCalls[0].(map[string]any)
 	fn, _ := call["function"].(map[string]any)
-	if fn["arguments"] != `{"q":"golang"}` {
-		t.Fatalf("expected concatenated call arguments repaired, got %#v", fn["arguments"])
+	if fn["arguments"] != `{}{"q":"golang"}` {
+		t.Fatalf("expected original concatenated call arguments preserved, got %#v", fn["arguments"])
 	}
 }
 

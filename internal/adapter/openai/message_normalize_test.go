@@ -168,7 +168,7 @@ func TestNormalizeOpenAIMessagesForPrompt_AssistantMultipleToolCallsRemainSepara
 	}
 }
 
-func TestNormalizeOpenAIMessagesForPrompt_RepairsConcatenatedToolArguments(t *testing.T) {
+func TestNormalizeOpenAIMessagesForPrompt_PreservesConcatenatedToolArguments(t *testing.T) {
 	raw := []any{
 		map[string]any{
 			"role": "assistant",
@@ -189,10 +189,7 @@ func TestNormalizeOpenAIMessagesForPrompt_RepairsConcatenatedToolArguments(t *te
 		t.Fatalf("expected one normalized message, got %d", len(normalized))
 	}
 	content, _ := normalized[0]["content"].(string)
-	if !strings.Contains(content, `function.arguments: {"query":"测试工具调用"}`) {
-		t.Fatalf("expected repaired arguments in tool history, got %q", content)
-	}
-	if strings.Contains(content, `{}{"query":"测试工具调用"}`) {
-		t.Fatalf("expected concatenated JSON to be repaired, got %q", content)
+	if !strings.Contains(content, `function.arguments: {}{"query":"测试工具调用"}`) {
+		t.Fatalf("expected original concatenated arguments in tool history, got %q", content)
 	}
 }

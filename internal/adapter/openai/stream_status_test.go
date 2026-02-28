@@ -167,19 +167,15 @@ func TestResponsesNonStreamMixedProseToolPayloadHandlerPath(t *testing.T) {
 		t.Fatalf("decode response failed: %v body=%s", err, rec.Body.String())
 	}
 	outputText, _ := out["output_text"].(string)
-	if outputText != "" {
-		t.Fatalf("expected output_text hidden for tool call payload, got %q", outputText)
+	if outputText == "" {
+		t.Fatalf("expected output_text preserved for mixed prose payload")
 	}
 	output, _ := out["output"].([]any)
-	hasFunctionCall := false
-	for _, item := range output {
-		m, _ := item.(map[string]any)
-		if m != nil && m["type"] == "function_call" {
-			hasFunctionCall = true
-			break
-		}
+	if len(output) != 1 {
+		t.Fatalf("expected one output item, got %#v", output)
 	}
-	if !hasFunctionCall {
-		t.Fatalf("expected function_call output item, got %#v", output)
+	first, _ := output[0].(map[string]any)
+	if first["type"] != "message" {
+		t.Fatalf("expected message output item, got %#v", output)
 	}
 }

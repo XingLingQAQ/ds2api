@@ -99,9 +99,6 @@ func TestHandleResponsesStreamUsesOfficialOutputItemEvents(t *testing.T) {
 	if !strings.Contains(body, "event: response.output_item.done") {
 		t.Fatalf("expected response.output_item.done event, body=%s", body)
 	}
-	if !strings.Contains(body, "event: response.function_call_arguments.delta") {
-		t.Fatalf("expected response.function_call_arguments.delta event, body=%s", body)
-	}
 	if !strings.Contains(body, "event: response.function_call_arguments.done") {
 		t.Fatalf("expected response.function_call_arguments.done event, body=%s", body)
 	}
@@ -360,7 +357,7 @@ func TestHandleResponsesStreamToolChoiceNoneRejectsFunctionCall(t *testing.T) {
 	}
 }
 
-func TestHandleResponsesStreamMalformedToolJSONClosesInProgressFunctionItem(t *testing.T) {
+func TestHandleResponsesStreamMalformedToolJSONFallsBackToText(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	rec := httptest.NewRecorder()
@@ -373,7 +370,7 @@ func TestHandleResponsesStreamMalformedToolJSONClosesInProgressFunctionItem(t *t
 		return "data: " + string(b) + "\n"
 	}
 
-	// invalid JSON (NaN) can still trigger incremental tool deltas before final parse rejects it
+	// invalid JSON (NaN) should remain plain text in strict mode.
 	streamBody := sseLine(`{"tool_calls":[{"name":"read_file","input":{"path":"README.MD"},"x":NaN}]}`) + "data: [DONE]\n"
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -382,14 +379,11 @@ func TestHandleResponsesStreamMalformedToolJSONClosesInProgressFunctionItem(t *t
 
 	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"read_file"}, util.DefaultToolChoicePolicy(), "")
 	body := rec.Body.String()
-	if !strings.Contains(body, "event: response.function_call_arguments.delta") {
-		t.Fatalf("expected response.function_call_arguments.delta event for malformed payload, body=%s", body)
+	if strings.Contains(body, "event: response.function_call_arguments.delta") || strings.Contains(body, "event: response.function_call_arguments.done") {
+		t.Fatalf("did not expect function_call events for malformed payload in strict mode, body=%s", body)
 	}
-	if !strings.Contains(body, "event: response.function_call_arguments.done") {
-		t.Fatalf("expected runtime to close in-progress function_call with done event, body=%s", body)
-	}
-	if !strings.Contains(body, "event: response.output_item.done") {
-		t.Fatalf("expected runtime to close function output item, body=%s", body)
+	if !strings.Contains(body, "event: response.output_text.delta") {
+		t.Fatalf("expected response.output_text.delta for malformed payload, body=%s", body)
 	}
 	if !strings.Contains(body, "event: response.completed") {
 		t.Fatalf("expected response.completed event, body=%s", body)

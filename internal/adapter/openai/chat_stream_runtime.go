@@ -98,7 +98,7 @@ func (s *chatStreamRuntime) sendDone() {
 func (s *chatStreamRuntime) finalize(finishReason string) {
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()
-	detected := util.ParseToolCalls(finalText, s.toolNames)
+	detected := util.ParseStandaloneToolCalls(finalText, s.toolNames)
 	if len(detected) > 0 && !s.toolCallsDoneEmitted {
 		finishReason = "tool_calls"
 		delta := map[string]any{

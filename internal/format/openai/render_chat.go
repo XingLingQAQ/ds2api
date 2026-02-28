@@ -8,7 +8,7 @@ import (
 )
 
 func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
-	detected := util.ParseToolCalls(finalText, toolNames)
+	detected := util.ParseStandaloneToolCalls(finalText, toolNames)
 	finishReason := "stop"
 	messageObj := map[string]any{"role": "assistant", "content": finalText}
 	if strings.TrimSpace(finalThinking) != "" {

@@ -45,7 +45,7 @@ func TestBuildResponseObjectToolCallsFollowChatShape(t *testing.T) {
 	}
 }
 
-func TestBuildResponseObjectTreatsMixedProseToolPayloadAsToolCall(t *testing.T) {
+func TestBuildResponseObjectTreatsMixedProseToolPayloadAsText(t *testing.T) {
 	obj := BuildResponseObject(
 		"resp_test",
 		"gpt-4o",
@@ -56,17 +56,16 @@ func TestBuildResponseObjectTreatsMixedProseToolPayloadAsToolCall(t *testing.T) 
 	)
 
 	outputText, _ := obj["output_text"].(string)
-	if outputText != "" {
-		t.Fatalf("expected output_text hidden once tool calls are detected, got %q", outputText)
+	if outputText == "" {
+		t.Fatalf("expected output_text preserved for mixed prose payload")
 	}
-
 	output, _ := obj["output"].([]any)
 	if len(output) != 1 {
-		t.Fatalf("expected function_call output only, got %#v", obj["output"])
+		t.Fatalf("expected one message output item, got %#v", obj["output"])
 	}
 	first, _ := output[0].(map[string]any)
-	if first["type"] != "function_call" {
-		t.Fatalf("expected first output type function_call, got %#v", first["type"])
+	if first["type"] != "message" {
+		t.Fatalf("expected message output type, got %#v", first["type"])
 	}
 }
 
@@ -127,7 +126,7 @@ func TestBuildResponseObjectReasoningOnlyFallsBackToOutputText(t *testing.T) {
 	}
 }
 
-func TestBuildResponseObjectDetectsToolCallFromThinkingChannel(t *testing.T) {
+func TestBuildResponseObjectIgnoresToolCallFromThinkingChannel(t *testing.T) {
 	obj := BuildResponseObject(
 		"resp_test",
 		"gpt-4o",
@@ -139,10 +138,10 @@ func TestBuildResponseObjectDetectsToolCallFromThinkingChannel(t *testing.T) {
 
 	output, _ := obj["output"].([]any)
 	if len(output) != 1 {
-		t.Fatalf("expected function_call output only, got %#v", obj["output"])
+		t.Fatalf("expected one message output item, got %#v", obj["output"])
 	}
 	first, _ := output[0].(map[string]any)
-	if first["type"] != "function_call" {
-		t.Fatalf("expected output function_call, got %#v", first["type"])
+	if first["type"] != "message" {
+		t.Fatalf("expected output message, got %#v", first["type"])
 	}
 }
