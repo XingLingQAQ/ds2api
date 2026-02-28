@@ -129,7 +129,9 @@
         "passwordPlaceholder": "账号密码",
         "addAccountLoading": "添加中...",
         "addAccountAction": "添加账号",
-        "pageInfo": "第 {current}/{total} 页，共 {count} 个账号"
+        "pageInfo": "第 {current}/{total} 页，共 {count} 个账号",
+        "searchPlaceholder": "搜索账号...",
+        "searchNoResults": "未找到匹配的账号"
     },
     "apiTester": {
         "defaultMessage": "你好，请用一句话介绍你自己。",

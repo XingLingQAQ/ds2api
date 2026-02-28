@@ -21,6 +21,8 @@ export default function AccountsTable({
     onPrevPage,
     onNextPage,
     onPageSizeChange,
+    searchQuery,
+    onSearchChange,
 }) {
     const [copiedId, setCopiedId] = useState(null)
 
@@ -38,6 +40,13 @@ export default function AccountsTable({
                     <p className="text-sm text-muted-foreground">{t('accountManager.accountsDesc')}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={e => onSearchChange(e.target.value)}
+                        placeholder={t('accountManager.searchPlaceholder')}
+                        className="px-3 py-1.5 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                    />
                     <button
                         onClick={onTestAll}
                         disabled={testingAll || totalAccounts === 0}
@@ -138,7 +147,7 @@ export default function AccountsTable({
                         )
                     })
                 ) : (
-                    <div className="p-8 text-center text-muted-foreground">{t('accountManager.noAccounts')}</div>
+                    <div className="p-8 text-center text-muted-foreground">{searchQuery ? t('accountManager.searchNoResults') : t('accountManager.noAccounts')}</div>
                 )}
             </div>
 

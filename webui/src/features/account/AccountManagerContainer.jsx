@@ -24,6 +24,8 @@ export default function AccountManagerContainer({ config, onRefresh, onMessage, 
         fetchAccounts,
         changePageSize,
         resolveAccountIdentifier,
+        searchQuery,
+        handleSearchChange,
     } = useAccountsData({ apiFetch })
 
     const {
@@ -91,6 +93,8 @@ export default function AccountManagerContainer({ config, onRefresh, onMessage, 
                 onPrevPage={() => fetchAccounts(page - 1)}
                 onNextPage={() => fetchAccounts(page + 1)}
                 onPageSizeChange={changePageSize}
+                searchQuery={searchQuery}
+                onSearchChange={handleSearchChange}
             />
 
             <AddKeyModal

@@ -8,12 +8,15 @@ RUN npm run build
 
 FROM golang:1.24 AS go-builder
 WORKDIR /app
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/ds2api ./cmd/ds2api
+RUN set -eux; \
+    GOOS="${TARGETOS:-$(go env GOOS)}"; \
+    GOARCH="${TARGETARCH:-$(go env GOARCH)}"; \
+    CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" go build -o /out/ds2api ./cmd/ds2api
 
 FROM busybox:1.36.1-musl AS busybox-tools
 

@@ -129,7 +129,9 @@
         "passwordPlaceholder": "Account password",
         "addAccountLoading": "Adding...",
         "addAccountAction": "Add account",
-        "pageInfo": "Page {current}/{total}, {count} accounts total"
+        "pageInfo": "Page {current}/{total}, {count} accounts total",
+        "searchPlaceholder": "Search accounts...",
+        "searchNoResults": "No accounts match your search"
     },
     "apiTester": {
         "defaultMessage": "Hello, please introduce yourself in one sentence.",

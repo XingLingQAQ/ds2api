@@ -16,10 +16,14 @@ export function useAccountsData({ apiFetch }) {
         return String(acc.identifier || acc.email || acc.mobile || '').trim()
     }
 
-    const fetchAccounts = async (targetPage = page, targetPageSize = pageSize) => {
+    const [searchQuery, setSearchQuery] = useState('')
+
+    const fetchAccounts = async (targetPage = page, targetPageSize = pageSize, targetQuery = searchQuery) => {
         setLoadingAccounts(true)
         try {
-            const res = await apiFetch(`/admin/accounts?page=${targetPage}&page_size=${targetPageSize}`)
+            let url = `/admin/accounts?page=${targetPage}&page_size=${targetPageSize}`
+            if (targetQuery.trim()) url += `&q=${encodeURIComponent(targetQuery.trim())}`
+            const res = await apiFetch(url)
             if (res.ok) {
                 const data = await res.json()
                 setAccounts(data.items || [])
@@ -37,6 +41,11 @@ export function useAccountsData({ apiFetch }) {
     const changePageSize = (newSize) => {
         setPageSize(newSize)
         fetchAccounts(1, newSize)
+    }
+
+    const handleSearchChange = (query) => {
+        setSearchQuery(query)
+        fetchAccounts(1, pageSize, query)
     }
 
     const fetchQueueStatus = async () => {
@@ -71,5 +80,7 @@ export function useAccountsData({ apiFetch }) {
         fetchAccounts,
         changePageSize,
         resolveAccountIdentifier,
+        searchQuery,
+        handleSearchChange,
     }
 }

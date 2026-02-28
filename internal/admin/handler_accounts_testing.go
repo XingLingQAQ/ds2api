@@ -125,10 +125,7 @@ func (h *Handler) testAccount(ctx context.Context, acc config.Account, model, me
 		}
 	}
 	if strings.TrimSpace(message) == "" {
-		result["success"] = true
-		result["message"] = "API 测试成功（仅会话创建）"
-		result["response_time"] = int(time.Since(start).Milliseconds())
-		return result
+		message = "你是谁？"
 	}
 	thinking, search, ok := config.GetModelConfig(model)
 	if !ok {
